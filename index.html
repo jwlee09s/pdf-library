@@ -1015,6 +1015,7 @@
     box-shadow: var(--shadow-2);
     position: relative;
     overflow: hidden;
+    flex-shrink: 0;  /* don't let the flex column squash pages — keep their real height */
     animation: pageIn 0.25s var(--ease);
   }
   .reader-page-wrap .page-skeleton {
@@ -1643,7 +1644,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[The Reading Room v10]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[The Reading Room v12]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -1715,15 +1716,30 @@
       if (error) throw error;
     },
 
-    async uploadPDF(id, bytes) {
+    async uploadPDF(id, bytes, abortSignal) {
       const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-      const blob = new Blob([u8], { type: 'application/pdf' });
       const path = `${this.uid()}/pdfs/${id}.pdf`;
-      const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
-        contentType: 'application/pdf',
-        upsert: true,
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      // Use raw fetch instead of supabase-js .upload() so we can pass an AbortSignal.
+      // This lets the user actually cancel a long upload by closing the modal.
+      const url = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Content-Type': 'application/pdf',
+          'x-upsert': 'true',
+        },
+        body: u8,
+        signal: abortSignal,
       });
-      if (error) throw error;
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Upload failed (${res.status}): ${errText}`);
+      }
     },
 
     async downloadPDF(id) {
@@ -2523,16 +2539,31 @@
     document.getElementById('add-btn').disabled = false;
   }
 
+  // State for current upload (so closeUploadModal can cancel it)
+  let activeUploadController = null;
+  let activePdfParseTask = null;
+
   async function confirmAdd() {
     if (!pendingFile) return;
     const btn = document.getElementById('add-btn');
     btn.disabled = true;
-    btn.textContent = '추가 중...';
+    btn.textContent = '분석 중...';
+
+    activeUploadController = new AbortController();
+    const signal = activeUploadController.signal;
+    const throwIfAborted = () => {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    };
 
     try {
       const arrayBuffer = await pendingFile.arrayBuffer();
+      throwIfAborted();
       const bytes = new Uint8Array(arrayBuffer);
-      const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+
+      activePdfParseTask = pdfjsLib.getDocument({ data: bytes.slice() });
+      const pdf = await activePdfParseTask.promise;
+      activePdfParseTask = null;
+      throwIfAborted();
       const pages = pdf.numPages;
 
       const titleInput = document.getElementById('title-input');
@@ -2557,11 +2588,12 @@
           btn.textContent = `업로드 중... ${elapsed}초 (${mb}MB)`;
         }, 500);
         try {
-          await Cloud.uploadPDF(id, bytes);
+          await Cloud.uploadPDF(id, bytes, signal);
           persisted = true;
           // Cache locally too (fire-and-forget)
           Storage.set('pdf:' + id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)).catch(() => {});
         } catch (e) {
+          if (e?.name === 'AbortError') throw e;  // bubble up
           persistErr = e?.message || String(e);
           console.error('[upload]', e);
         } finally {
@@ -2609,9 +2641,16 @@
         : `세션에만 추가됨 — ${persistErr || '저장 실패'}`,
         !(persisted && savedToCloud));
     } catch (e) {
-      console.error(e);
-      toast('PDF 추가에 실패했습니다: ' + (e?.message || ''), true);
+      if (e?.name === 'AbortError') {
+        console.log('[upload] cancelled by user');
+        toast('업로드가 취소되었습니다');
+      } else {
+        console.error(e);
+        toast('PDF 추가에 실패했습니다: ' + (e?.message || ''), true);
+      }
     } finally {
+      activeUploadController = null;
+      activePdfParseTask = null;
       btn.disabled = false;
       btn.textContent = '추가';
     }
@@ -2627,6 +2666,15 @@
     document.getElementById('upload-modal').classList.add('open');
   }
   function closeUploadModal() {
+    // Cancel any in-flight upload / PDF parse triggered from this modal
+    if (activeUploadController) {
+      try { activeUploadController.abort(); } catch (_) {}
+      activeUploadController = null;
+    }
+    if (activePdfParseTask) {
+      try { activePdfParseTask.destroy(); } catch (_) {}
+      activePdfParseTask = null;
+    }
     document.getElementById('upload-modal').classList.remove('open');
   }
   document.getElementById('upload-modal').addEventListener('click', (e) => {
