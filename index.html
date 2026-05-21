@@ -1498,7 +1498,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[Reading Room v2 — diagnostic build]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[Reading Room v3 — auth lock fix]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -2801,29 +2801,35 @@
     // Show auth screen by default; the auth state listener will hide it if there's a session
     document.getElementById('auth-screen').classList.add('open');
 
-    supabase.auth.onAuthStateChange(async (event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
       console.log('[auth] event:', event, '| user:', session?.user?.email || 'none');
       const user = session?.user || null;
-      if (user) {
-        currentUser = user;
-        document.getElementById('auth-screen').classList.remove('open');
-        updateUserMenu(user);
-        await loadLibrary();
-      } else {
-        currentUser = null;
-        library = [];
-        folders = [];
-        Object.keys(sessionData).forEach(k => delete sessionData[k]);
-        Object.keys(thumbnailCache).forEach(k => delete thumbnailCache[k]);
-        Object.keys(pdfDocCache).forEach(k => delete pdfDocCache[k]);
-        renderFilterBar();
-        renderShelf();
-        updateStats();
-        updateStorageBadge();
-        updateUserMenu(null);
-        document.getElementById('migrate-banner').classList.remove('open');
-        document.getElementById('auth-screen').classList.add('open');
-      }
+
+      // CRITICAL: Defer all Supabase DB/Storage calls so we don't block the auth
+      // state machine. Awaiting inside this callback causes a deadlock — subsequent
+      // auth events (including SIGNED_OUT) never fire.
+      setTimeout(async () => {
+        if (user) {
+          currentUser = user;
+          document.getElementById('auth-screen').classList.remove('open');
+          updateUserMenu(user);
+          await loadLibrary();
+        } else {
+          currentUser = null;
+          library = [];
+          folders = [];
+          Object.keys(sessionData).forEach(k => delete sessionData[k]);
+          Object.keys(thumbnailCache).forEach(k => delete thumbnailCache[k]);
+          Object.keys(pdfDocCache).forEach(k => delete pdfDocCache[k]);
+          renderFilterBar();
+          renderShelf();
+          updateStats();
+          updateStorageBadge();
+          updateUserMenu(null);
+          document.getElementById('migrate-banner').classList.remove('open');
+          document.getElementById('auth-screen').classList.add('open');
+        }
+      }, 0);
     });
   })();
 
