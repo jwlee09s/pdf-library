@@ -432,6 +432,44 @@
   .book-action.delete:hover { background: var(--red); color: #fff; border-color: transparent; }
   .book-action svg { width: 13px; height: 13px; }
 
+  /* Inline rename input — used for both book title and folder chip */
+  .book-title-input {
+    font: inherit;
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--text-4);
+    border-radius: 5px;
+    padding: 2px 6px;
+    width: 100%;
+    outline: none;
+    box-sizing: border-box;
+    line-height: 1.35;
+    -webkit-appearance: none;
+  }
+  .book-title-input:focus {
+    border-color: var(--text);
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+  }
+  .chip-rename-input {
+    padding: 0 14px;
+    background: var(--surface);
+    border: 1px solid var(--text-3);
+    border-radius: 980px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    font-weight: 500;
+    height: 28px;
+    min-width: 80px;
+  }
+  .chip-rename-input:focus {
+    border-color: var(--text);
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+  }
+
   /* Folder tag in book metadata */
   .book-folder-tag {
     display: inline-flex;
@@ -1584,7 +1622,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[Reading Room v5 — rename books]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[Reading Room v6 — inline rename + folder rename + PDF perf]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -1793,7 +1831,7 @@
       const safe = escapeAttr(f);
       const remove = `<span class="chip-remove" data-action="remove-folder" data-folder="${safe}" title="폴더 삭제">×</span>`;
       chips.push(
-        `<button class="chip ${isActive ? 'active' : ''}" data-filter="${safe}">${escapeHTML(f)} <span class="count">${count}</span>${remove}</button>`
+        `<button class="chip ${isActive ? 'active' : ''}" data-filter="${safe}" title="두 번 클릭하여 이름 수정">${escapeHTML(f)} <span class="count">${count}</span>${remove}</button>`
       );
     }
 
@@ -1810,6 +1848,15 @@
         if (e.target.closest('[data-action="remove-folder"]')) return;
         setFilter(el.dataset.filter);
       });
+      // Folder chips (real folders, not __all / __unfiled) support double-click rename
+      const f = el.dataset.filter;
+      if (f && !f.startsWith('__')) {
+        el.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          renameFolder(el, f);
+        });
+      }
     });
     bar.querySelectorAll('[data-action="new-folder"]').forEach(el => {
       el.addEventListener('click', promptNewFolder);
@@ -1847,6 +1894,74 @@
     await saveFolders();
     setFilter(trimmed);
     toast(`폴더 "${trimmed}" 생성됨`);
+  }
+
+  async function renameFolder(chipEl, oldName) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'chip-rename-input';
+    input.value = oldName;
+    input.style.width = Math.max(80, oldName.length * 10 + 50) + 'px';
+    input.maxLength = 100;
+    chipEl.parentNode.replaceChild(input, chipEl);
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const finish = async (save) => {
+      if (finished) return;
+      finished = true;
+      input.removeEventListener('blur', onBlur);
+
+      if (!save) { renderFilterBar(); return; }
+
+      const newName = input.value.trim();
+      if (!newName || newName === oldName) { renderFilterBar(); return; }
+
+      if (newName.startsWith('__')) {
+        toast('"__"로 시작하는 이름은 사용할 수 없습니다', true);
+        renderFilterBar();
+        return;
+      }
+      if (folders.includes(newName)) {
+        toast(`"${newName}" 폴더가 이미 있습니다`, true);
+        renderFilterBar();
+        return;
+      }
+
+      // Optimistic update — UI feels instant
+      const affected = library.filter(b => b.folder === oldName);
+      affected.forEach(b => { b.folder = newName; });
+      const idx = folders.indexOf(oldName);
+      if (idx >= 0) folders[idx] = newName;
+      const filterChanged = currentFilter === oldName;
+      if (filterChanged) currentFilter = newName;
+      renderFilterBar();
+      renderShelf();
+
+      try {
+        await Promise.all(affected.map(b => Cloud.saveBook(b)));
+        await saveFolders();
+        toast(`"${oldName}" → "${newName}"`);
+      } catch (e) {
+        // Revert on failure
+        affected.forEach(b => { b.folder = oldName; });
+        if (idx >= 0) folders[idx] = oldName;
+        if (filterChanged) currentFilter = oldName;
+        renderFilterBar();
+        renderShelf();
+        toast(`이름 변경 실패: ${e?.message || e}`, true);
+      }
+    };
+
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    const onBlur = () => finish(true);
+    input.addEventListener('blur', onBlur);
+    input.addEventListener('click', (e) => e.stopPropagation());
   }
 
   async function deleteFolder(name) {
@@ -2488,25 +2603,54 @@
     if (e.target.id === 'upload-modal') closeUploadModal();
   });
 
-  async function renameBook(id) {
+  function renameBook(id) {
     const book = library.find(b => b.id === id);
     if (!book) return;
-    const input = prompt('새 제목:', book.title);
-    if (input === null) return;
-    const newTitle = input.trim();
-    if (!newTitle || newTitle === book.title) return;
+    const cardEl = document.querySelector(`.book[data-id="${id}"]`);
+    if (!cardEl) return;
+    const titleEl = cardEl.querySelector('.book-title');
+    if (!titleEl || titleEl.tagName === 'INPUT') return;  // already editing
 
-    const oldTitle = book.title;
-    book.title = newTitle;
-    renderShelf();  // optimistic update — feels instant
-    try {
-      await Cloud.saveBook(book);
-      toast('제목이 수정되었습니다');
-    } catch (e) {
-      book.title = oldTitle;  // revert
-      renderShelf();
-      toast(`수정 실패: ${e?.message || e}`, true);
-    }
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'book-title-input';
+    input.value = book.title;
+    input.maxLength = 200;
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const finish = async (save) => {
+      if (finished) return;
+      finished = true;
+      input.removeEventListener('blur', onBlur);
+
+      if (!save) { renderShelf(); return; }
+      const newTitle = input.value.trim();
+      if (!newTitle || newTitle === book.title) { renderShelf(); return; }
+
+      const oldTitle = book.title;
+      book.title = newTitle;
+      renderShelf();  // optimistic — instant feedback
+      try {
+        await Cloud.saveBook(book);
+        toast('제목이 수정되었습니다');
+      } catch (e) {
+        book.title = oldTitle;
+        renderShelf();
+        toast(`수정 실패: ${e?.message || e}`, true);
+      }
+    };
+
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();  // don't trigger reader/global keys
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    const onBlur = () => finish(true);
+    input.addEventListener('blur', onBlur);
+    input.addEventListener('click', (e) => e.stopPropagation());
   }
 
   async function deleteBook(id) {
@@ -2584,34 +2728,40 @@
     }
   }
 
-  // Build the continuous-scroll list of pages, with placeholders sized to each page's
-  // aspect ratio. Actual canvas rendering happens lazily as pages enter the viewport.
+  // Build the continuous-scroll list of pages. Only the first page is fetched up front
+  // to determine placeholder dimensions; the rest are fetched lazily as they scroll into view.
+  // This makes the initial open instant even on 500+ page PDFs.
   async function buildPageList() {
     if (!currentPDF) return;
     const stage = document.getElementById('reader-stage');
     stage.innerHTML = '';
     pageWraps = [];
-    pageObjects = [];
+    pageObjects = new Array(currentPDF.numPages);  // sparse, filled on demand
     renderedPages = new Set();
     pageRenderTasks.forEach(t => { try { t.cancel(); } catch (_) {} });
     pageRenderTasks.clear();
 
-    // First, get viewport dimensions for every page so placeholders have correct height.
-    // PDF.js getPage is cheap; loading all metadata up front avoids layout jumps.
-    const dpr = window.devicePixelRatio || 1;
+    // Fetch only page 1 to get default dimensions for placeholders
+    const firstPage = await currentPDF.getPage(1);
+    pageObjects[0] = firstPage;
+    const firstViewport = firstPage.getViewport({ scale: currentScale });
+    const defaultW = firstViewport.width;
+    const defaultH = firstViewport.height;
+
+    // Create placeholders for every page using first-page dimensions.
+    // Each placeholder will resize itself when its real page is rendered.
+    const frag = document.createDocumentFragment();
     for (let i = 1; i <= currentPDF.numPages; i++) {
-      const page = await currentPDF.getPage(i);
-      pageObjects[i - 1] = page;
-      const viewport = page.getViewport({ scale: currentScale });
       const wrap = document.createElement('div');
       wrap.className = 'reader-page-wrap';
       wrap.dataset.page = String(i);
-      wrap.style.width = viewport.width + 'px';
-      wrap.style.height = viewport.height + 'px';
+      wrap.style.width = defaultW + 'px';
+      wrap.style.height = defaultH + 'px';
       wrap.innerHTML = `<div class="page-skeleton">${i} / ${currentPDF.numPages}</div>`;
-      stage.appendChild(wrap);
+      frag.appendChild(wrap);
       pageWraps.push(wrap);
     }
+    stage.appendChild(frag);
 
     setupObservers(stage);
     updatePageIndicators();
@@ -2666,16 +2816,39 @@
     if (renderedPages.has(n)) return;
     renderedPages.add(n);
     const wrap = pageWraps[n - 1];
-    const page = pageObjects[n - 1];
-    if (!wrap || !page) { renderedPages.delete(n); return; }
+    if (!wrap) { renderedPages.delete(n); return; }
+
+    // Lazy-fetch the page object (only page 1 was prefetched)
+    let page = pageObjects[n - 1];
+    if (!page) {
+      try {
+        page = await currentPDF.getPage(n);
+        pageObjects[n - 1] = page;
+      } catch (e) {
+        console.warn('getPage failed', n, e);
+        renderedPages.delete(n);
+        return;
+      }
+    }
 
     const dpr = window.devicePixelRatio || 1;
     const viewport = page.getViewport({ scale: currentScale * dpr });
+    const dispW = viewport.width / dpr;
+    const dispH = viewport.height / dpr;
+
+    // If this page's real dimensions differ from the placeholder, resize so the
+    // canvas fits exactly and surrounding pages don't shift around
+    if (Math.abs(parseFloat(wrap.style.width) - dispW) > 1 ||
+        Math.abs(parseFloat(wrap.style.height) - dispH) > 1) {
+      wrap.style.width = dispW + 'px';
+      wrap.style.height = dispH + 'px';
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    canvas.style.width = (viewport.width / dpr) + 'px';
-    canvas.style.height = (viewport.height / dpr) + 'px';
+    canvas.style.width = dispW + 'px';
+    canvas.style.height = dispH + 'px';
 
     const task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
     pageRenderTasks.set(n, task);
