@@ -193,6 +193,16 @@
   }
   .btn-secondary:hover { background: var(--tint-3); }
 
+  .btn-danger {
+    background: var(--red);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 980px;
+  }
+  .btn-danger:hover { background: #E0352B; transform: translateY(-1px); }
+  .btn-danger:active { transform: translateY(0); }
+  .btn-danger:disabled { background: #FFA09A; cursor: not-allowed; transform: none; }
+
   .btn-text {
     background: transparent;
     color: var(--blue);
@@ -851,6 +861,75 @@
     margin-top: 28px;
   }
 
+  /* === CONFIRM DIALOG === */
+  .confirm-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+    background: var(--tint-1);
+    color: var(--text-3);
+  }
+  .confirm-icon.danger {
+    background: rgba(255, 59, 48, 0.10);
+    color: var(--red);
+  }
+  .modal.confirm {
+    max-width: 380px;
+    padding: 28px;
+    text-align: center;
+  }
+  .modal.confirm h3 {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .modal.confirm .lead {
+    text-align: center;
+    margin-bottom: 22px;
+    line-height: 1.5;
+    white-space: pre-line;
+  }
+  .modal.confirm .modal-actions {
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  /* === BULK DOWNLOAD PROGRESS === */
+  .progress-bar {
+    height: 6px;
+    background: var(--tint-2);
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 18px 0 10px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--blue);
+    width: 0%;
+    transition: width 0.3s var(--ease);
+    border-radius: 999px;
+  }
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--text-3);
+    margin-bottom: 4px;
+  }
+  .progress-current {
+    font-size: 12px;
+    color: var(--text-4);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: var(--tint-1);
+    border-radius: 8px;
+  }
+
   .notice {
     margin-top: 16px;
     padding: 10px 14px;
@@ -1481,7 +1560,13 @@
 
 <div class="section-head">
   <h2>모든 책</h2>
-  <span class="count" id="filter-count"></span>
+  <div style="display:flex; align-items:center; gap:14px;">
+    <button class="btn btn-secondary" id="bulk-download-btn" onclick="downloadAllAsZip()" style="padding:6px 14px; font-size:13px;" title="서재 전체를 ZIP으로 다운로드">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span>전체 다운로드</span>
+    </button>
+    <span class="count" id="filter-count"></span>
+  </div>
 </div>
 
 <div class="migrate-banner" id="migrate-banner">
@@ -1527,6 +1612,38 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeUploadModal()">취소</button>
       <button class="btn btn-primary" id="add-btn" onclick="confirmAdd()" disabled>추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Dialog -->
+<div class="modal-bg" id="confirm-modal">
+  <div class="modal confirm">
+    <div class="confirm-icon" id="confirm-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <h3 id="confirm-title">확인</h3>
+    <div class="lead" id="confirm-message"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="confirm-cancel">취소</button>
+      <button class="btn btn-primary" id="confirm-ok">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Download Progress Modal -->
+<div class="modal-bg" id="bulk-download-modal">
+  <div class="modal">
+    <h3 id="bulk-title">서재 다운로드</h3>
+    <div class="lead" id="bulk-lead">PDF들을 받아오는 중입니다…</div>
+    <div class="progress-meta">
+      <span id="bulk-progress-label">0 / 0</span>
+      <span id="bulk-progress-pct">0%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="bulk-progress-fill"></div></div>
+    <div class="progress-current" id="bulk-current">준비 중…</div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="bulk-cancel-btn">취소</button>
     </div>
   </div>
 </div>
@@ -1644,7 +1761,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[The Reading Room v12]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[The Reading Room v14]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -2015,7 +2132,13 @@
     const msg = count > 0
       ? `"${name}" 폴더를 삭제할까요?\n안의 책 ${count}권은 "미분류"로 이동됩니다. (책은 삭제되지 않습니다)`
       : `"${name}" 폴더를 삭제할까요?`;
-    if (!confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: '폴더 삭제',
+      message: msg,
+      confirmText: '삭제',
+      danger: true,
+    });
+    if (!ok) return;
 
     // Reassign books to unfiled
     const affected = [];
@@ -2356,6 +2479,9 @@
           </div>
         </div>
         <div class="book-actions">
+          <button class="book-action book-download-btn" data-id="${b.id}" title="다운로드">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
           <button class="book-action book-folder-btn" data-id="${b.id}" title="폴더로 이동">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
           </button>
@@ -2389,6 +2515,12 @@
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         openFolderPopover(el.dataset.id, el);
+      });
+    });
+    shelf.querySelectorAll('.book-download-btn').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadBook(el.dataset.id);
       });
     });
     shelf.querySelectorAll('.book-rename-btn').forEach(el => {
@@ -2525,9 +2657,26 @@
     if (e.target.files && e.target.files[0]) handleFilePicked(e.target.files[0]);
   });
 
+  // Supabase free tier hard limit: 50MB per file. Server rejects anything bigger.
+  const UPLOAD_BYTE_LIMIT = 50 * 1024 * 1024;
+
   function handleFilePicked(file) {
     if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       toast('PDF 파일만 추가할 수 있습니다', true);
+      return;
+    }
+    if (file.size > UPLOAD_BYTE_LIMIT) {
+      pendingFile = null;
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      dropText.innerHTML = `
+        <span class="filename" style="color:var(--red);">${escapeHTML(file.name)}</span>
+        <span class="filesize">${formatSize(file.size)}</span>
+        <span class="filesize" style="color:var(--red);margin-top:8px;">
+          ❌ 파일이 너무 큽니다 (${mb}MB &gt; 50MB 한도)<br/>
+          Supabase 무료 티어는 파일당 최대 50MB까지만 업로드 가능합니다.
+        </span>`;
+      document.getElementById('title-field').style.display = 'none';
+      document.getElementById('add-btn').disabled = true;
       return;
     }
     pendingFile = file;
@@ -2571,14 +2720,14 @@
       const id = 'b_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
 
       // Upload to Supabase Storage + DB. Cache locally for instant re-reads.
-      const PERSIST_BYTE_LIMIT = 100 * 1024 * 1024;
+      // Use the same 50MB limit as the early file-picker check (Supabase free tier).
       let persisted = false;
       let persistErr = null;
 
       if (!currentUser) {
         persistErr = '로그인이 필요합니다';
-      } else if (bytes.byteLength > PERSIST_BYTE_LIMIT) {
-        persistErr = `파일이 한도(${(PERSIST_BYTE_LIMIT / 1024 / 1024).toFixed(0)}MB)를 초과함`;
+      } else if (bytes.byteLength > UPLOAD_BYTE_LIMIT) {
+        persistErr = `파일이 Supabase 무료 티어 한도(50MB)를 초과함`;
       } else {
         const mb = (bytes.byteLength / 1024 / 1024).toFixed(1);
         const startTime = Date.now();
@@ -2734,7 +2883,13 @@
   async function deleteBook(id) {
     const book = library.find(b => b.id === id);
     if (!book) return;
-    if (!confirm(`"${book.title}"을(를) 서재에서 제거할까요?`)) return;
+    const ok = await confirmDialog({
+      title: '책 제거',
+      message: `"${book.title}"을(를) 서재에서 제거할까요?\n이 작업은 되돌릴 수 없습니다.`,
+      confirmText: '제거',
+      danger: true,
+    });
+    if (!ok) return;
 
     library = library.filter(b => b.id !== id);
     delete sessionData[id];
@@ -3087,6 +3242,291 @@
     toastTimer = setTimeout(() => t.className = 'toast', isError ? 6000 : 2400);
   }
 
+  // -------- Custom Confirm Dialog --------
+  // Returns Promise<boolean> — true if user confirms, false if cancels.
+  // opts: { title, message, confirmText='확인', cancelText='취소', danger=false }
+  function confirmDialog(opts = {}) {
+    return new Promise((resolve) => {
+      const bg = document.getElementById('confirm-modal');
+      const titleEl = document.getElementById('confirm-title');
+      const msgEl = document.getElementById('confirm-message');
+      const okBtn = document.getElementById('confirm-ok');
+      const cancelBtn = document.getElementById('confirm-cancel');
+      const iconEl = document.getElementById('confirm-icon');
+
+      titleEl.textContent = opts.title || '확인';
+      msgEl.textContent = opts.message || '';
+      okBtn.textContent = opts.confirmText || '확인';
+      cancelBtn.textContent = opts.cancelText || '취소';
+
+      iconEl.classList.toggle('danger', !!opts.danger);
+      iconEl.innerHTML = opts.danger
+        ? '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
+        : '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+
+      okBtn.className = 'btn ' + (opts.danger ? 'btn-danger' : 'btn-primary');
+
+      const cleanup = (result) => {
+        bg.classList.remove('open');
+        okBtn.onclick = null;
+        cancelBtn.onclick = null;
+        bg.onclick = null;
+        document.removeEventListener('keydown', onKey);
+        resolve(result);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') cleanup(false);
+        else if (e.key === 'Enter') cleanup(true);
+      };
+
+      okBtn.onclick = () => cleanup(true);
+      cancelBtn.onclick = () => cleanup(false);
+      bg.onclick = (e) => { if (e.target === bg) cleanup(false); };
+      document.addEventListener('keydown', onKey);
+
+      bg.classList.add('open');
+      setTimeout(() => cancelBtn.focus(), 50);
+    });
+  }
+
+  // -------- File download helpers --------
+  function sanitizeFilename(name) {
+    // Strip filesystem-unsafe chars, collapse whitespace, limit length
+    let n = String(name || 'document')
+      .replace(/[/\\:*?"<>|]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (n.length > 100) n = n.slice(0, 100);
+    return n || 'document';
+  }
+
+  function triggerBrowserDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Get raw PDF bytes for a book — checks every available source.
+  // Returns Uint8Array or throws.
+  async function getBookBytes(id, signal) {
+    // 1. Session-only (unpersisted) data
+    if (sessionData[id]) {
+      return new Uint8Array(sessionData[id]);
+    }
+    // 2. Local IDB cache
+    const cached = await Storage.get('pdf:' + id);
+    if (cached) {
+      return new Uint8Array(cached);
+    }
+    // 3. Cloud — fetch via signed URL (so we can pass AbortSignal)
+    if (!currentUser) throw new Error('로그인이 필요합니다');
+    const url = await Cloud.getSignedPDFURL(id);
+    const res = await fetch(url, { signal });
+    if (!res.ok) throw new Error(`다운로드 실패 (${res.status})`);
+    const buf = await res.arrayBuffer();
+    // Opportunistically cache so future opens are instant
+    Storage.set('pdf:' + id, buf).catch(() => {});
+    return new Uint8Array(buf);
+  }
+
+  async function downloadBook(id) {
+    const book = library.find(b => b.id === id);
+    if (!book) return;
+    try {
+      toast('다운로드 준비 중…');
+      const bytes = await getBookBytes(id);
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      triggerBrowserDownload(blob, sanitizeFilename(book.title) + '.pdf');
+      toast('다운로드 시작됨');
+    } catch (e) {
+      console.error('[downloadBook]', e);
+      toast('다운로드 실패: ' + (e?.message || e), true);
+    }
+  }
+
+  // -------- Bulk download as ZIP --------
+  let jsZipPromise = null;
+  function loadJSZip() {
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    if (jsZipPromise) return jsZipPromise;
+    jsZipPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload = () => resolve(window.JSZip);
+      s.onerror = () => { jsZipPromise = null; reject(new Error('JSZip 로드 실패')); };
+      document.head.appendChild(s);
+    });
+    return jsZipPromise;
+  }
+
+  let bulkDownloadController = null;
+  async function downloadAllAsZip() {
+    // Use filtered books (whatever the user is currently viewing) — feels more intentional
+    // than always grabbing everything.
+    const filtered = getFilteredLibrary();
+    if (filtered.length === 0) {
+      toast('다운로드할 책이 없습니다', true);
+      return;
+    }
+
+    const totalBytes = filtered.reduce((s, b) => s + (b.sizeBytes || 0), 0);
+    const filterLabel = currentFilter === '__all' ? '전체 서재' :
+                       currentFilter === '__unfiled' ? '미분류 책들' :
+                       `"${currentFilter}" 폴더`;
+    const confirmed = await confirmDialog({
+      title: '서재 다운로드',
+      message: `${filterLabel} ${filtered.length}권 (총 ${formatSize(totalBytes)})을 ZIP 파일로 다운로드합니다.\n파일 크기가 크면 시간이 걸릴 수 있습니다.`,
+      confirmText: '다운로드',
+    });
+    if (!confirmed) return;
+
+    let JSZip;
+    try {
+      JSZip = await loadJSZip();
+    } catch (e) {
+      toast('압축 라이브러리 로드 실패', true);
+      return;
+    }
+
+    // Open progress modal
+    const modal = document.getElementById('bulk-download-modal');
+    const fill = document.getElementById('bulk-progress-fill');
+    const label = document.getElementById('bulk-progress-label');
+    const pct = document.getElementById('bulk-progress-pct');
+    const current = document.getElementById('bulk-current');
+    const cancelBtn = document.getElementById('bulk-cancel-btn');
+    const lead = document.getElementById('bulk-lead');
+    lead.textContent = `${filterLabel} ${filtered.length}권을 다운로드 중입니다…`;
+    cancelBtn.textContent = '취소';
+    cancelBtn.disabled = false;
+    fill.style.width = '0%';
+    label.textContent = `0 / ${filtered.length}`;
+    pct.textContent = '0%';
+    current.textContent = '시작 중…';
+    modal.classList.add('open');
+
+    bulkDownloadController = new AbortController();
+    const signal = bulkDownloadController.signal;
+    const onCancel = () => {
+      if (bulkDownloadController) bulkDownloadController.abort();
+    };
+    cancelBtn.onclick = onCancel;
+
+    const zip = new JSZip();
+    const usedNames = new Set();
+    let done = 0;
+    let failed = 0;
+    const failedTitles = [];
+
+    // Resolve duplicate filenames by appending (2), (3), etc.
+    function uniqueName(base) {
+      if (!usedNames.has(base)) { usedNames.add(base); return base; }
+      let i = 2;
+      while (usedNames.has(`${base.replace(/\.pdf$/i, '')} (${i}).pdf`)) i++;
+      const n = `${base.replace(/\.pdf$/i, '')} (${i}).pdf`;
+      usedNames.add(n);
+      return n;
+    }
+
+    // Concurrency-limited downloader (max 3 in flight)
+    const queue = [...filtered];
+    const CONCURRENCY = 3;
+
+    async function worker() {
+      while (queue.length > 0) {
+        if (signal.aborted) return;
+        const book = queue.shift();
+        if (!book) return;
+        current.textContent = `다운로드 중: ${book.title}`;
+        try {
+          const bytes = await getBookBytes(book.id, signal);
+          if (signal.aborted) return;
+          // Optionally group by folder
+          const folderPrefix = book.folder ? sanitizeFilename(book.folder) + '/' : '';
+          const fname = uniqueName(folderPrefix + sanitizeFilename(book.title) + '.pdf');
+          zip.file(fname, bytes);
+        } catch (e) {
+          if (e?.name === 'AbortError') return;
+          console.warn('[bulk] failed for', book.title, e);
+          failed++;
+          failedTitles.push(book.title);
+        }
+        done++;
+        const pctVal = Math.round((done / filtered.length) * 100);
+        fill.style.width = pctVal + '%';
+        label.textContent = `${done} / ${filtered.length}`;
+        pct.textContent = pctVal + '%';
+      }
+    }
+
+    try {
+      await Promise.all(Array(CONCURRENCY).fill(0).map(() => worker()));
+      if (signal.aborted) {
+        modal.classList.remove('open');
+        toast('다운로드가 취소되었습니다');
+        return;
+      }
+
+      // Generate ZIP
+      current.textContent = 'ZIP 파일 생성 중…';
+      cancelBtn.disabled = true;
+      const blob = await zip.generateAsync(
+        { type: 'blob', compression: 'STORE' },  // PDFs already compressed — STORE is faster
+        (meta) => {
+          const p = Math.round(meta.percent);
+          fill.style.width = p + '%';
+          pct.textContent = p + '%';
+          label.textContent = 'ZIP 생성';
+        }
+      );
+
+      const ts = new Date().toISOString().slice(0, 10);
+      const zipName = currentFilter === '__all'
+        ? `library_${ts}.zip`
+        : currentFilter === '__unfiled'
+          ? `library_unfiled_${ts}.zip`
+          : `library_${sanitizeFilename(currentFilter)}_${ts}.zip`;
+      triggerBrowserDownload(blob, zipName);
+
+      modal.classList.remove('open');
+      if (failed > 0) {
+        toast(`완료 — ${done - failed}권 성공, ${failed}권 실패`, true);
+        console.warn('Failed books:', failedTitles);
+      } else {
+        toast(`${done}권 다운로드 완료`);
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') {
+        modal.classList.remove('open');
+        toast('다운로드가 취소되었습니다');
+      } else {
+        console.error('[bulk]', e);
+        modal.classList.remove('open');
+        toast('다운로드 실패: ' + (e?.message || e), true);
+      }
+    } finally {
+      bulkDownloadController = null;
+    }
+  }
+
+  // Helper to share filtering logic between renderShelf and bulk download
+  function getFilteredLibrary() {
+    let filtered = library.slice();
+    if (currentFilter === '__unfiled') {
+      filtered = filtered.filter(b => !b.folder);
+    } else if (currentFilter !== '__all') {
+      filtered = filtered.filter(b => b.folder === currentFilter);
+    }
+    const q = (document.getElementById('search')?.value || '').toLowerCase().trim();
+    if (q) filtered = filtered.filter(b => b.title.toLowerCase().includes(q));
+    return filtered;
+  }
+
   // -------- Auth handlers --------
   async function signInGoogle() {
     if (!supabase) return;
@@ -3425,7 +3865,8 @@
     openUploadModal, closeUploadModal, confirmAdd, closeReader,
     signInGoogle, submitAuth, signOutUser, toggleAuthMode,
     toggleUserMenu, dismissMigration, runMigration,
-    backToAuthForm, resendVerification
+    backToAuthForm, resendVerification,
+    downloadAllAsZip
   });
   console.log('[boot] window functions exposed — script fully loaded');
 </script>
