@@ -933,20 +933,41 @@
     flex: 1;
     overflow: auto;
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 32px;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 32px 80px;
+    gap: 16px;
     background:
       radial-gradient(900px 700px at 18% 22%, rgba(0, 0, 0, 0.10), transparent 60%),
       radial-gradient(820px 680px at 82% 78%, rgba(0, 0, 0, 0.08), transparent 62%),
       var(--bg);
+    scroll-behavior: smooth;
   }
   .reader-stage canvas {
     box-shadow: var(--shadow-2);
     background: #fff;
     border-radius: 6px;
     max-width: none;
+    display: block;
+  }
+  .reader-page-wrap {
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: var(--shadow-2);
+    position: relative;
+    overflow: hidden;
     animation: pageIn 0.25s var(--ease);
+  }
+  .reader-page-wrap .page-skeleton {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-4);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    background: #fff;
   }
   @keyframes pageIn {
     from { opacity: 0; transform: translateY(8px); }
@@ -1146,6 +1167,51 @@
   }
   .auth-toggle b { color: var(--text); font-weight: 600; }
   .auth-toggle:hover b { text-decoration: underline; }
+
+  /* Email verification pending state */
+  .auth-pending-icon {
+    width: 56px; height: 56px;
+    margin: 0 auto 18px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #34C759 0%, #30B350 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(52, 199, 89, 0.32);
+  }
+  .auth-pending-icon svg { width: 30px; height: 30px; }
+  .auth-pending h2 { text-align: center; }
+  .auth-pending .pending-email-line {
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-2);
+    margin: 10px 0 22px;
+    line-height: 1.5;
+  }
+  .auth-pending .pending-email-line b {
+    display: block;
+    color: var(--text);
+    font-size: 15px;
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .auth-pending .pending-tip {
+    font-size: 12px;
+    color: var(--text-3);
+    text-align: center;
+    line-height: 1.55;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 0.5px solid var(--hairline-soft);
+  }
+  .pending-resend-msg {
+    text-align: center;
+    font-size: 12px;
+    color: var(--green, #34C759);
+    margin-top: 10px;
+    min-height: 16px;
+  }
 
   /* Setup-needed screen (Supabase not configured) */
   .setup-screen {
@@ -1445,7 +1511,7 @@
 
 <!-- Auth Screen -->
 <div class="auth-screen" id="auth-screen">
-  <div class="auth-card">
+  <div class="auth-card" id="auth-form-card">
     <div class="auth-logo">L</div>
     <h2 id="auth-title">The Reading Room</h2>
     <div class="lead" id="auth-lead">로그인해서 라이브러리에 접속하세요</div>
@@ -1463,6 +1529,26 @@
     <button class="auth-toggle" id="auth-toggle" onclick="toggleAuthMode()">
       <span id="auth-toggle-text">계정이 없으세요? </span><b id="auth-toggle-cta">가입하기</b>
     </button>
+  </div>
+
+  <div class="auth-card auth-pending" id="auth-pending-card" style="display:none;">
+    <div class="auth-pending-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+    </div>
+    <h2>이메일을 확인하세요</h2>
+    <div class="pending-email-line">
+      <b id="pending-email"></b>
+      이 주소로 인증 메일을 보냈습니다.
+    </div>
+    <div class="auth-actions">
+      <button class="btn btn-primary" onclick="resendVerification()" id="resend-btn">인증 메일 다시 보내기</button>
+      <button class="btn btn-secondary" onclick="backToAuthForm()">로그인 화면으로</button>
+    </div>
+    <div class="pending-resend-msg" id="resend-msg"></div>
+    <div class="pending-tip">
+      메일이 안 보이면 <b style="color:var(--text-2);">스팸함</b>도 확인하세요.<br/>
+      메일의 링크를 클릭하면 가입이 완료되고 자동 로그인됩니다.
+    </div>
   </div>
 </div>
 
@@ -1498,7 +1584,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[Reading Room v3 — auth lock fix]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[Reading Room v5 — rename books]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -2112,6 +2198,9 @@
           <button class="book-action book-folder-btn" data-id="${b.id}" title="폴더로 이동">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
           </button>
+          <button class="book-action book-rename-btn" data-id="${b.id}" title="제목 수정">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          </button>
           <button class="book-action delete book-delete-btn" data-id="${b.id}" title="삭제">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
@@ -2139,6 +2228,12 @@
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         openFolderPopover(el.dataset.id, el);
+      });
+    });
+    shelf.querySelectorAll('.book-rename-btn').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renameBook(el.dataset.id);
       });
     });
     shelf.querySelectorAll('.book-delete-btn').forEach(el => {
@@ -2393,6 +2488,27 @@
     if (e.target.id === 'upload-modal') closeUploadModal();
   });
 
+  async function renameBook(id) {
+    const book = library.find(b => b.id === id);
+    if (!book) return;
+    const input = prompt('새 제목:', book.title);
+    if (input === null) return;
+    const newTitle = input.trim();
+    if (!newTitle || newTitle === book.title) return;
+
+    const oldTitle = book.title;
+    book.title = newTitle;
+    renderShelf();  // optimistic update — feels instant
+    try {
+      await Cloud.saveBook(book);
+      toast('제목이 수정되었습니다');
+    } catch (e) {
+      book.title = oldTitle;  // revert
+      renderShelf();
+      toast(`수정 실패: ${e?.message || e}`, true);
+    }
+  }
+
   async function deleteBook(id) {
     const book = library.find(b => b.id === id);
     if (!book) return;
@@ -2425,7 +2541,13 @@
   let currentPDF = null;
   let currentPage = 1;
   let currentScale = 1.25;
-  let renderingTask = null;
+  let pageWraps = [];                 // DOM wrappers per page
+  let pageObjects = [];               // cached PDF.js page objects
+  let renderedPages = new Set();      // pages that have been drawn
+  let lazyRenderObserver = null;      // IntersectionObserver for rendering
+  let pageTrackerObserver = null;     // IntersectionObserver for current-page indicator
+  let pageRenderTasks = new Map();    // page num -> render task (for cancellation on zoom)
+  let isProgrammaticScroll = false;   // suppress page-tracker during click-driven scrolls
 
   async function openReader(id) {
     const book = library.find(b => b.id === id);
@@ -2437,7 +2559,6 @@
     document.getElementById('reader-stage').innerHTML = '<div class="reader-loading"><div class="spinner"></div>불러오는 중...</div>';
 
     try {
-      // Use cached parsed document if available
       if (pdfDocCache[id]) {
         currentPDF = pdfDocCache[id];
       } else {
@@ -2447,7 +2568,6 @@
             '<div class="reader-loading" style="color:var(--red);">파일을 불러올 수 없습니다.<br/>세션이 만료되었거나 저장된 데이터를 찾을 수 없습니다.</div>';
           return;
         }
-        // Update message: storage retrieved, now parsing
         document.getElementById('reader-stage').innerHTML = '<div class="reader-loading"><div class="spinner"></div>PDF 분석 중...</div>';
         currentPDF = await pdfjsLib.getDocument({ data: bytes }).promise;
         pdfDocCache[id] = currentPDF;
@@ -2456,7 +2576,7 @@
       currentScale = 1.25;
       document.getElementById('page-total').textContent = currentPDF.numPages;
       document.getElementById('page-input').max = currentPDF.numPages;
-      await renderPage();
+      await buildPageList();
     } catch (e) {
       console.error(e);
       document.getElementById('reader-stage').innerHTML =
@@ -2464,63 +2584,171 @@
     }
   }
 
-  async function renderPage() {
+  // Build the continuous-scroll list of pages, with placeholders sized to each page's
+  // aspect ratio. Actual canvas rendering happens lazily as pages enter the viewport.
+  async function buildPageList() {
     if (!currentPDF) return;
     const stage = document.getElementById('reader-stage');
+    stage.innerHTML = '';
+    pageWraps = [];
+    pageObjects = [];
+    renderedPages = new Set();
+    pageRenderTasks.forEach(t => { try { t.cancel(); } catch (_) {} });
+    pageRenderTasks.clear();
 
-    if (renderingTask) { try { renderingTask.cancel(); } catch (e) {} }
+    // First, get viewport dimensions for every page so placeholders have correct height.
+    // PDF.js getPage is cheap; loading all metadata up front avoids layout jumps.
+    const dpr = window.devicePixelRatio || 1;
+    for (let i = 1; i <= currentPDF.numPages; i++) {
+      const page = await currentPDF.getPage(i);
+      pageObjects[i - 1] = page;
+      const viewport = page.getViewport({ scale: currentScale });
+      const wrap = document.createElement('div');
+      wrap.className = 'reader-page-wrap';
+      wrap.dataset.page = String(i);
+      wrap.style.width = viewport.width + 'px';
+      wrap.style.height = viewport.height + 'px';
+      wrap.innerHTML = `<div class="page-skeleton">${i} / ${currentPDF.numPages}</div>`;
+      stage.appendChild(wrap);
+      pageWraps.push(wrap);
+    }
 
-    const page = await currentPDF.getPage(currentPage);
+    setupObservers(stage);
+    updatePageIndicators();
+  }
+
+  function setupObservers(stage) {
+    // Lazy-render pages slightly before they scroll into view
+    if (lazyRenderObserver) lazyRenderObserver.disconnect();
+    lazyRenderObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const n = parseInt(entry.target.dataset.page, 10);
+          renderPageAt(n);
+        }
+      }
+    }, { root: stage, rootMargin: '600px 0px', threshold: 0 });
+
+    // Track which page is currently most-visible to update the page indicator
+    if (pageTrackerObserver) pageTrackerObserver.disconnect();
+    pageTrackerObserver = new IntersectionObserver((entries) => {
+      if (isProgrammaticScroll) return;
+      // Find the page wrap whose top is closest to (but not below) the viewport top
+      let best = null;
+      let bestY = Infinity;
+      for (const wrap of pageWraps) {
+        const rect = wrap.getBoundingClientRect();
+        const stageRect = stage.getBoundingClientRect();
+        const top = rect.top - stageRect.top;
+        if (top <= 80 && top > -rect.height + 80) {
+          if (Math.abs(top) < bestY) {
+            bestY = Math.abs(top);
+            best = wrap;
+          }
+        }
+      }
+      if (best) {
+        const n = parseInt(best.dataset.page, 10);
+        if (n !== currentPage) {
+          currentPage = n;
+          updatePageIndicators();
+        }
+      }
+    }, { root: stage, threshold: [0, 0.1, 0.5, 1] });
+
+    pageWraps.forEach(w => {
+      lazyRenderObserver.observe(w);
+      pageTrackerObserver.observe(w);
+    });
+  }
+
+  async function renderPageAt(n) {
+    if (renderedPages.has(n)) return;
+    renderedPages.add(n);
+    const wrap = pageWraps[n - 1];
+    const page = pageObjects[n - 1];
+    if (!wrap || !page) { renderedPages.delete(n); return; }
+
     const dpr = window.devicePixelRatio || 1;
     const viewport = page.getViewport({ scale: currentScale * dpr });
-
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     canvas.style.width = (viewport.width / dpr) + 'px';
     canvas.style.height = (viewport.height / dpr) + 'px';
 
-    stage.innerHTML = '';
-    stage.appendChild(canvas);
+    const task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+    pageRenderTasks.set(n, task);
+    try {
+      await task.promise;
+      wrap.innerHTML = '';
+      wrap.appendChild(canvas);
+    } catch (e) {
+      if (e?.name !== 'RenderingCancelledException') console.warn('render page', n, e);
+      renderedPages.delete(n);
+    } finally {
+      pageRenderTasks.delete(n);
+    }
+  }
 
-    renderingTask = page.render({ canvasContext: canvas.getContext('2d'), viewport });
-    try { await renderingTask.promise; }
-    catch (e) { if (e?.name !== 'RenderingCancelledException') console.warn(e); }
-
+  function updatePageIndicators() {
+    if (!currentPDF) return;
     document.getElementById('page-input').value = currentPage;
     document.getElementById('zoom-level').textContent = Math.round(currentScale * 100) + '%';
     document.getElementById('prev-page').disabled = currentPage <= 1;
     document.getElementById('next-page').disabled = currentPage >= currentPDF.numPages;
   }
 
+  function scrollToPage(n) {
+    if (!currentPDF || n < 1 || n > currentPDF.numPages) return;
+    const wrap = pageWraps[n - 1];
+    if (!wrap) return;
+    currentPage = n;
+    updatePageIndicators();
+    isProgrammaticScroll = true;
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // re-enable page tracker after the smooth scroll settles
+    clearTimeout(scrollToPage._t);
+    scrollToPage._t = setTimeout(() => { isProgrammaticScroll = false; }, 600);
+  }
+
   function closeReader() {
     document.getElementById('reader').classList.remove('open');
     currentPDF = null;
+    pageWraps = [];
+    pageObjects = [];
+    renderedPages = new Set();
+    pageRenderTasks.forEach(t => { try { t.cancel(); } catch (_) {} });
+    pageRenderTasks.clear();
+    if (lazyRenderObserver) { lazyRenderObserver.disconnect(); lazyRenderObserver = null; }
+    if (pageTrackerObserver) { pageTrackerObserver.disconnect(); pageTrackerObserver = null; }
   }
 
   document.getElementById('prev-page').addEventListener('click', () => {
-    if (currentPage > 1) { currentPage--; renderPage(); }
+    if (currentPage > 1) scrollToPage(currentPage - 1);
   });
   document.getElementById('next-page').addEventListener('click', () => {
-    if (currentPDF && currentPage < currentPDF.numPages) { currentPage++; renderPage(); }
+    if (currentPDF && currentPage < currentPDF.numPages) scrollToPage(currentPage + 1);
   });
   document.getElementById('zoom-in').addEventListener('click', () => {
-    currentScale = Math.min(currentScale + 0.25, 4); renderPage();
+    currentScale = Math.min(currentScale + 0.25, 4);
+    buildPageList().then(() => scrollToPage(currentPage));
   });
   document.getElementById('zoom-out').addEventListener('click', () => {
-    currentScale = Math.max(currentScale - 0.25, 0.5); renderPage();
+    currentScale = Math.max(currentScale - 0.25, 0.5);
+    buildPageList().then(() => scrollToPage(currentPage));
   });
   document.getElementById('page-input').addEventListener('change', (e) => {
     const n = parseInt(e.target.value, 10);
-    if (currentPDF && n >= 1 && n <= currentPDF.numPages) { currentPage = n; renderPage(); }
-    else { e.target.value = currentPage; }
+    if (currentPDF && n >= 1 && n <= currentPDF.numPages) scrollToPage(n);
+    else e.target.value = currentPage;
   });
 
   document.addEventListener('keydown', (e) => {
     if (!document.getElementById('reader').classList.contains('open')) return;
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-    if (e.key === 'ArrowLeft') document.getElementById('prev-page').click();
-    else if (e.key === 'ArrowRight') document.getElementById('next-page').click();
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); document.getElementById('prev-page').click(); }
+    else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); document.getElementById('next-page').click(); }
     else if (e.key === 'Escape') closeReader();
     else if (e.key === '+' || e.key === '=') document.getElementById('zoom-in').click();
     else if (e.key === '-') document.getElementById('zoom-out').click();
@@ -2580,10 +2808,12 @@
       if (authMode === 'signup') {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
+        // With "Confirm email" enabled in Supabase, signUp returns a user but no session
+        // until the user clicks the link in the verification email.
         if (data?.user && !data.session) {
-          // Email confirmation required by Supabase project settings
-          showAuthError('확인 이메일을 보냈습니다. 이메일을 확인하세요.');
+          showPendingVerification(email);
         }
+        // If somehow a session IS returned (confirm email off), onAuthStateChange handles UI.
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -2593,6 +2823,45 @@
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = original;
+    }
+  }
+
+  function showPendingVerification(email) {
+    document.getElementById('auth-form-card').style.display = 'none';
+    document.getElementById('auth-pending-card').style.display = 'block';
+    document.getElementById('pending-email').textContent = email;
+    document.getElementById('resend-msg').textContent = '';
+    // Stash the email for the resend handler
+    document.getElementById('auth-pending-card').dataset.email = email;
+  }
+
+  function backToAuthForm() {
+    document.getElementById('auth-pending-card').style.display = 'none';
+    document.getElementById('auth-form-card').style.display = 'block';
+    document.getElementById('resend-msg').textContent = '';
+    // Switch back to sign-in mode for convenience
+    if (authMode === 'signup') toggleAuthMode();
+  }
+
+  async function resendVerification() {
+    const email = document.getElementById('auth-pending-card').dataset.email;
+    if (!email) return;
+    const btn = document.getElementById('resend-btn');
+    const msg = document.getElementById('resend-msg');
+    btn.disabled = true;
+    msg.style.color = 'var(--text-3)';
+    msg.textContent = '전송 중...';
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      if (error) throw error;
+      msg.style.color = 'var(--green, #34C759)';
+      msg.textContent = '✓ 메일을 다시 보냈습니다';
+    } catch (e) {
+      msg.style.color = 'var(--red)';
+      msg.textContent = parseSupabaseError(e);
+    } finally {
+      // Re-enable after a short cooldown (Supabase enforces rate limit anyway)
+      setTimeout(() => { btn.disabled = false; }, 30000);
     }
   }
 
@@ -2845,7 +3114,8 @@
   Object.assign(window, {
     openUploadModal, closeUploadModal, confirmAdd, closeReader,
     signInGoogle, submitAuth, signOutUser, toggleAuthMode,
-    toggleUserMenu, dismissMigration, runMigration
+    toggleUserMenu, dismissMigration, runMigration,
+    backToAuthForm, resendVerification
   });
   console.log('[boot] window functions exposed — script fully loaded');
 </script>
