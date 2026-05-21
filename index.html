@@ -551,6 +551,25 @@
     color: var(--text);
     border-style: solid;
   }
+  .chip-edit {
+    margin-left: -2px;
+    margin-right: -2px;
+    width: 16px; height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    border-radius: 50%;
+    opacity: 0.5;
+    padding: 0;
+  }
+  .chip-edit svg { width: 10px; height: 10px; }
+  .chip-edit:hover { opacity: 1; background: rgba(0, 0, 0, 0.1); }
+  .chip.active .chip-edit:hover { background: rgba(255, 255, 255, 0.2); }
+
   .chip-remove {
     margin-left: -2px;
     margin-right: -4px;
@@ -1622,7 +1641,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[Reading Room v6 — inline rename + folder rename + PDF perf]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[The Reading Room v7]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -1829,9 +1848,10 @@
       const count = library.filter(b => b.folder === f).length;
       const isActive = currentFilter === f;
       const safe = escapeAttr(f);
+      const edit = `<span class="chip-edit" data-action="rename-folder" data-folder="${safe}" title="이름 변경"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>`;
       const remove = `<span class="chip-remove" data-action="remove-folder" data-folder="${safe}" title="폴더 삭제">×</span>`;
       chips.push(
-        `<button class="chip ${isActive ? 'active' : ''}" data-filter="${safe}" title="두 번 클릭하여 이름 수정">${escapeHTML(f)} <span class="count">${count}</span>${remove}</button>`
+        `<button class="chip ${isActive ? 'active' : ''}" data-filter="${safe}">${escapeHTML(f)} <span class="count">${count}</span>${edit}${remove}</button>`
       );
     }
 
@@ -1845,21 +1865,21 @@
     // Wire up
     bar.querySelectorAll('[data-filter]').forEach(el => {
       el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action="remove-folder"]')) return;
+        // Don't apply filter if user clicked one of the inline action icons
+        if (e.target.closest('[data-action]')) return;
         setFilter(el.dataset.filter);
       });
-      // Folder chips (real folders, not __all / __unfiled) support double-click rename
-      const f = el.dataset.filter;
-      if (f && !f.startsWith('__')) {
-        el.addEventListener('dblclick', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          renameFolder(el, f);
-        });
-      }
     });
     bar.querySelectorAll('[data-action="new-folder"]').forEach(el => {
       el.addEventListener('click', promptNewFolder);
+    });
+    bar.querySelectorAll('[data-action="rename-folder"]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const folderName = el.dataset.folder;
+        const chip = el.closest('.chip');
+        if (chip && folderName) renameFolder(chip, folderName);
+      });
     });
     bar.querySelectorAll('[data-action="remove-folder"]').forEach(el => {
       el.addEventListener('click', (e) => {
