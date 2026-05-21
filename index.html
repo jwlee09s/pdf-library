@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Library — PDF</title>
+<title>The Reading Room</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231D1D1F'/><stop offset='1' stop-color='%234A4A4D'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='url(%23g)'/><path d='M12 8v16h9' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231D1D1F'/><stop offset='1' stop-color='%234A4A4D'/></linearGradient></defs><rect width='180' height='180' rx='40' fill='url(%23g)'/><path d='M68 46v88h52' stroke='white' stroke-width='14' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root {
@@ -1641,7 +1643,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[The Reading Room v8]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[The Reading Room v10]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -2753,20 +2755,36 @@
         }
 
         // Not cached locally — stream from Supabase Storage via HTTP range requests.
-        // PDF.js fetches only the chunks needed for the visible pages, so the first
-        // page typically appears in 1–2 seconds even for large PDFs.
+        // PDF.js fetches only what it needs to display the visible pages.
         if (!currentPDF && currentUser) {
-          document.getElementById('reader-stage').innerHTML = '<div class="reader-loading"><div class="spinner"></div>스트리밍 중...</div>';
+          const stage = document.getElementById('reader-stage');
+          stage.innerHTML = '<div class="reader-loading"><div class="spinner"></div><div id="reader-progress">스트리밍 중...</div></div>';
+          const progEl = document.getElementById('reader-progress');
+
           const url = await Cloud.getSignedPDFURL(id);
-          currentPDF = await pdfjsLib.getDocument({
+          const loadingTask = pdfjsLib.getDocument({
             url,
-            disableAutoFetch: true,   // only fetch chunks for pages we actually need
-            disableStream: false,
-            rangeChunkSize: 65536,    // 64KB range chunks
-          }).promise;
+            rangeChunkSize: 512 * 1024,   // 512KB chunks — fewer round trips
+            // Let PDF.js use its default smart loading (don't force disableAutoFetch).
+            // For small PDFs it'll fetch the whole file efficiently; for large ones it'll stream.
+          });
+          loadingTask.onProgress = ({ loaded, total }) => {
+            if (!progEl) return;
+            if (total) {
+              const pct = Math.round((loaded / total) * 100);
+              const mb = (total / 1024 / 1024).toFixed(1);
+              progEl.textContent = `다운로드 중... ${pct}% (${mb}MB)`;
+            } else {
+              const mb = (loaded / 1024 / 1024).toFixed(1);
+              progEl.textContent = `다운로드 중... ${mb}MB`;
+            }
+          };
+          currentPDF = await loadingTask.promise;
           pdfDocCache[id] = currentPDF;
-          // Background: download full bytes and cache in IDB for next time
-          cachePDFInBackground(id, url);
+          // Note: we intentionally do NOT do a separate full download here.
+          // PDF.js already fetched what it needed via range requests, and racing a
+          // second fetch slows down the visible pages. Caching for offline reads
+          // would need a smarter strategy (e.g. on user idle).
         }
 
         if (!currentPDF) {
@@ -2785,21 +2803,6 @@
       console.error(e);
       document.getElementById('reader-stage').innerHTML =
         '<div class="reader-loading" style="color:var(--red);">PDF를 여는 중 오류가 발생했습니다.<br/>' + (e?.message || '') + '</div>';
-    }
-  }
-
-  // Asynchronously fetch full PDF bytes and write to IDB cache.
-  // Doesn't block the reader — runs after the reader is already open.
-  async function cachePDFInBackground(id, url) {
-    try {
-      // Skip if already cached during this call (race protection)
-      const existing = await Storage.get('pdf:' + id);
-      if (existing) return;
-      const res = await fetch(url);
-      const buf = await res.arrayBuffer();
-      await Storage.set('pdf:' + id, buf);
-    } catch (e) {
-      console.warn('[cachePDF] background cache failed', e);
     }
   }
 
