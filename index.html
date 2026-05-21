@@ -1498,6 +1498,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
+  console.log('%c[Reading Room v2 — diagnostic build]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -1542,9 +1543,9 @@
       return (data || []).map(r => ({
         id: r.id,
         title: r.title,
-        pages: r.pages,
+        pages: Number(r.pages) || 0,
         dateAdded: r.date_added,
-        sizeBytes: r.size_bytes,
+        sizeBytes: Number(r.size_bytes) || 0,
         folder: r.folder,
         persisted: true,
       }));
@@ -1571,8 +1572,9 @@
 
     async uploadPDF(id, bytes) {
       const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      const blob = new Blob([u8], { type: 'application/pdf' });
       const path = `${this.uid()}/pdfs/${id}.pdf`;
-      const { error } = await supabase.storage.from(BUCKET).upload(path, u8, {
+      const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
         contentType: 'application/pdf',
         upsert: true,
       });
@@ -1651,19 +1653,21 @@
   const META_KEY = 'library:meta';
 
   async function loadLibrary() {
+    console.log('[loadLibrary] called');
     try {
       library = await Cloud.fetchBooks();
+      console.log('[loadLibrary] fetched', library.length, 'books');
     } catch (e) {
-      console.error('Failed to load library from cloud', e);
+      console.error('[loadLibrary] fetchBooks failed:', e);
       library = [];
     }
-    await loadFolders();
-    renderFilterBar();
-    renderShelf();
-    updateStats();
-    updateStorageBadge();
-    // Surface a migration prompt if we still have old local data
+    try { await loadFolders(); console.log('[loadLibrary] folders loaded:', folders.length); } catch (e) { console.error('[loadLibrary] loadFolders:', e); folders = []; }
+    try { renderFilterBar(); } catch (e) { console.error('[loadLibrary] renderFilterBar:', e); }
+    try { renderShelf(); } catch (e) { console.error('[loadLibrary] renderShelf:', e); }
+    try { updateStats(); } catch (e) { console.error('[loadLibrary] updateStats:', e); }
+    try { updateStorageBadge(); } catch (e) { console.error('[loadLibrary] updateStorageBadge:', e); }
     checkForMigration();
+    console.log('[loadLibrary] done');
   }
 
   // No longer used directly — kept as a no-op for any legacy callsites.
@@ -2342,19 +2346,28 @@
       library.push(newBook);
 
       // Save metadata row
+      let savedToCloud = false;
       if (persisted) {
-        try { await Cloud.saveBook(newBook); }
-        catch (e) { console.warn('Book meta save failed', e); }
+        try {
+          await Cloud.saveBook(newBook);
+          savedToCloud = true;
+        } catch (e) {
+          console.error('[saveBook] FAILED:', e);
+          persistErr = `DB 저장 실패: ${e?.message || e}`;
+          newBook.persisted = false;
+          // Clean up the orphan PDF in Storage since DB save failed
+          try { await Cloud.deletePDF(id); } catch (_) {}
+        }
       }
 
       closeUploadModal();
       renderFilterBar();
       renderShelf();
       updateStats();
-      toast(persisted
+      toast(persisted && savedToCloud
         ? '클라우드에 업로드되었습니다'
         : `세션에만 추가됨 — ${persistErr || '저장 실패'}`,
-        !persisted);
+        !(persisted && savedToCloud));
     } catch (e) {
       console.error(e);
       toast('PDF 추가에 실패했습니다: ' + (e?.message || ''), true);
@@ -2584,9 +2597,10 @@
   }
 
   async function signOutUser() {
+    console.log('[signOutUser] called');
     closeUserMenu();
     try { await supabase.auth.signOut(); }
-    catch (e) { console.error(e); }
+    catch (e) { console.error('[signOutUser] error:', e); }
   }
 
   function toggleAuthMode() {
@@ -2787,7 +2801,8 @@
     // Show auth screen by default; the auth state listener will hide it if there's a session
     document.getElementById('auth-screen').classList.add('open');
 
-    supabase.auth.onAuthStateChange(async (_event, session) => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[auth] event:', event, '| user:', session?.user?.email || 'none');
       const user = session?.user || null;
       if (user) {
         currentUser = user;
@@ -2826,6 +2841,7 @@
     signInGoogle, submitAuth, signOutUser, toggleAuthMode,
     toggleUserMenu, dismissMigration, runMigration
   });
+  console.log('[boot] window functions exposed — script fully loaded');
 </script>
 </body>
 </html>
