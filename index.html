@@ -1641,7 +1641,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  console.log('%c[The Reading Room v7]', 'color:#0a84ff;font-weight:bold');
+  console.log('%c[The Reading Room v8]', 'color:#0a84ff;font-weight:bold');
   // ============================================================
   // SUPABASE CONFIG  ←  REPLACE WITH YOUR PROJECT'S VALUES
   // ============================================================
@@ -1729,6 +1729,14 @@
       const { data, error } = await supabase.storage.from(BUCKET).download(path);
       if (error) throw error;
       return new Uint8Array(await data.arrayBuffer());
+    },
+
+    async getSignedPDFURL(id, expirySec = 60 * 60) {
+      const path = `${this.uid()}/pdfs/${id}.pdf`;
+      const { data, error } = await supabase.storage.from(BUCKET)
+        .createSignedUrl(path, expirySec);
+      if (error) throw error;
+      return data?.signedUrl;
     },
 
     async deletePDF(id) {
@@ -2724,18 +2732,50 @@
 
     try {
       if (pdfDocCache[id]) {
+        // Parsed PDF already in memory — instant
         currentPDF = pdfDocCache[id];
       } else {
-        const bytes = await loadPDFBytes(id);
-        if (!bytes) {
+        // Check local IDB cache first (fast)
+        const cached = await Storage.get('pdf:' + id);
+        if (cached) {
+          let bytes;
+          if (cached instanceof ArrayBuffer) bytes = new Uint8Array(cached);
+          else if (cached instanceof Uint8Array) bytes = cached;
+          else if (typeof cached === 'string') {
+            const res = await fetch('data:application/octet-stream;base64,' + cached);
+            bytes = new Uint8Array(await res.arrayBuffer());
+          }
+          if (bytes) {
+            document.getElementById('reader-stage').innerHTML = '<div class="reader-loading"><div class="spinner"></div>PDF 분석 중...</div>';
+            currentPDF = await pdfjsLib.getDocument({ data: bytes }).promise;
+            pdfDocCache[id] = currentPDF;
+          }
+        }
+
+        // Not cached locally — stream from Supabase Storage via HTTP range requests.
+        // PDF.js fetches only the chunks needed for the visible pages, so the first
+        // page typically appears in 1–2 seconds even for large PDFs.
+        if (!currentPDF && currentUser) {
+          document.getElementById('reader-stage').innerHTML = '<div class="reader-loading"><div class="spinner"></div>스트리밍 중...</div>';
+          const url = await Cloud.getSignedPDFURL(id);
+          currentPDF = await pdfjsLib.getDocument({
+            url,
+            disableAutoFetch: true,   // only fetch chunks for pages we actually need
+            disableStream: false,
+            rangeChunkSize: 65536,    // 64KB range chunks
+          }).promise;
+          pdfDocCache[id] = currentPDF;
+          // Background: download full bytes and cache in IDB for next time
+          cachePDFInBackground(id, url);
+        }
+
+        if (!currentPDF) {
           document.getElementById('reader-stage').innerHTML =
-            '<div class="reader-loading" style="color:var(--red);">파일을 불러올 수 없습니다.<br/>세션이 만료되었거나 저장된 데이터를 찾을 수 없습니다.</div>';
+            '<div class="reader-loading" style="color:var(--red);">파일을 불러올 수 없습니다.</div>';
           return;
         }
-        document.getElementById('reader-stage').innerHTML = '<div class="reader-loading"><div class="spinner"></div>PDF 분석 중...</div>';
-        currentPDF = await pdfjsLib.getDocument({ data: bytes }).promise;
-        pdfDocCache[id] = currentPDF;
       }
+
       currentPage = 1;
       currentScale = 1.25;
       document.getElementById('page-total').textContent = currentPDF.numPages;
@@ -2744,7 +2784,22 @@
     } catch (e) {
       console.error(e);
       document.getElementById('reader-stage').innerHTML =
-        '<div class="reader-loading" style="color:var(--red);">PDF를 여는 중 오류가 발생했습니다.</div>';
+        '<div class="reader-loading" style="color:var(--red);">PDF를 여는 중 오류가 발생했습니다.<br/>' + (e?.message || '') + '</div>';
+    }
+  }
+
+  // Asynchronously fetch full PDF bytes and write to IDB cache.
+  // Doesn't block the reader — runs after the reader is already open.
+  async function cachePDFInBackground(id, url) {
+    try {
+      // Skip if already cached during this call (race protection)
+      const existing = await Storage.get('pdf:' + id);
+      if (existing) return;
+      const res = await fetch(url);
+      const buf = await res.arrayBuffer();
+      await Storage.set('pdf:' + id, buf);
+    } catch (e) {
+      console.warn('[cachePDF] background cache failed', e);
     }
   }
 
@@ -2768,10 +2823,21 @@
     const defaultW = firstViewport.width;
     const defaultH = firstViewport.height;
 
-    // Create placeholders for every page using first-page dimensions.
-    // Each placeholder will resize itself when its real page is rendered.
+    // Create page 1 placeholder first, append, and KICK OFF its render immediately
+    // so the user sees content while the rest of the placeholders are being built.
+    const firstWrap = document.createElement('div');
+    firstWrap.className = 'reader-page-wrap';
+    firstWrap.dataset.page = '1';
+    firstWrap.style.width = defaultW + 'px';
+    firstWrap.style.height = defaultH + 'px';
+    firstWrap.innerHTML = `<div class="page-skeleton">1 / ${currentPDF.numPages}</div>`;
+    stage.appendChild(firstWrap);
+    pageWraps.push(firstWrap);
+    renderPageAt(1);  // fire and forget — user sees page 1 ASAP
+
+    // Now create the rest of the placeholders (fast, no PDF.js calls)
     const frag = document.createDocumentFragment();
-    for (let i = 1; i <= currentPDF.numPages; i++) {
+    for (let i = 2; i <= currentPDF.numPages; i++) {
       const wrap = document.createElement('div');
       wrap.className = 'reader-page-wrap';
       wrap.dataset.page = String(i);
