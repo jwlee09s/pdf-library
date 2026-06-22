@@ -1180,6 +1180,75 @@
     letter-spacing: -0.01em;
   }
   .rbtn-ai svg { width: 15px; height: 15px; }
+
+  /* === SCIENTIFIC CALCULATOR === */
+  .calc-panel {
+    position: fixed;
+    top: 80px; right: 32px;
+    width: 320px;
+    z-index: 1200;
+    background: var(--glass-strong, rgba(255,255,255,0.92));
+    -webkit-backdrop-filter: saturate(180%) blur(28px);
+    backdrop-filter: saturate(180%) blur(28px);
+    border: 0.5px solid var(--hairline, rgba(0,0,0,0.12));
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.26);
+    overflow: hidden;
+    user-select: none;
+  }
+  .calc-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; cursor: grab;
+    border-bottom: 0.5px solid var(--hairline, rgba(0,0,0,0.1));
+  }
+  .calc-head:active { cursor: grabbing; }
+  .calc-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+  .calc-head-right { display: flex; align-items: center; gap: 6px; }
+  .calc-mode {
+    font-family: inherit; font-size: 11px; font-weight: 600;
+    color: var(--text-2); background: var(--tint-2, rgba(0,0,0,0.05));
+    border: 0.5px solid var(--hairline-soft, rgba(0,0,0,0.08));
+    border-radius: 7px; padding: 3px 8px; cursor: pointer;
+  }
+  .calc-x {
+    border: none; background: transparent; color: var(--text-3); cursor: pointer;
+    font-size: 13px; width: 24px; height: 24px; border-radius: 6px;
+  }
+  .calc-x:hover { background: var(--tint-2, rgba(0,0,0,0.06)); color: var(--text); }
+  .calc-expr {
+    width: 100%; border: none; outline: none; background: transparent;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 20px; color: var(--text); text-align: right;
+    padding: 12px 14px 2px; box-sizing: border-box;
+  }
+  .calc-result {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 14px; color: var(--text-3); text-align: right;
+    padding: 0 14px 8px; min-height: 18px; word-break: break-all;
+  }
+  .calc-result.err { color: #D7263D; }
+  .calc-pad {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    gap: 6px; padding: 10px 12px 14px;
+  }
+  .calc-btn {
+    font-family: inherit; font-size: 14px; font-weight: 500;
+    border: 0.5px solid var(--border-2, rgba(0,0,0,0.08));
+    background: var(--surface, #fff); color: var(--text);
+    border-radius: 11px; padding: 11px 0; cursor: pointer;
+    transition: transform 0.08s var(--ease-snap, ease), background 0.12s ease, filter 0.12s ease;
+  }
+  .calc-btn:hover { background: var(--bg-2, rgba(0,0,0,0.03)); }
+  .calc-btn:active { transform: scale(0.94); }
+  .calc-btn.fn { font-size: 12.5px; color: var(--text-2); background: var(--tint-1, rgba(0,0,0,0.03)); }
+  .calc-btn.op { font-size: 16px; color: var(--blue, #0A84FF); font-weight: 600; }
+  .calc-btn.warn { color: #D7263D; }
+  .calc-btn.eq { background: var(--blue, #0A84FF); color: #fff; border-color: transparent; font-size: 17px; font-weight: 600; }
+  .calc-btn.eq:hover { background: var(--blue-hover, #0070E0); }
+  .rbtn-calc.active { background: var(--blue, #0A84FF); color: #fff; }
+  @media (max-width: 480px) {
+    .calc-panel { right: 8px; left: 8px; width: auto; }
+  }
   .rbtn-ai.active { background: var(--blue); color: #fff; border-color: transparent; }
   .rbtn-ai.active:hover { background: var(--blue-hover); box-shadow: var(--shadow-1); }
 
@@ -2027,6 +2096,9 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
         </button>
       </div>
+      <button class="rbtn rbtn-calc" id="calc-toggle" title="공학용 계산기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8" y2="11"/><line x1="12" y1="11" x2="12" y2="11"/><line x1="16" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="8" y2="15"/><line x1="12" y1="15" x2="12" y2="15"/><line x1="16" y1="15" x2="16" y2="18"/><line x1="8" y1="18" x2="12" y2="18"/></svg>
+      </button>
       <button class="rbtn rbtn-ai" id="ai-toggle" onclick="toggleAIPanel()" title="AI에게 질문 (이 페이지 기준)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg>
         <span>AI</span>
@@ -2120,6 +2192,68 @@
         <button class="btn btn-primary" style="width:100%; justify-content:center; margin-top:4px;" onclick="saveAISettings()">저장</button>
       </div>
     </aside>
+  </div>
+</div>
+
+<!-- Scientific Calculator (floating, draggable) -->
+<div class="calc-panel" id="calc-panel" style="display:none;">
+  <div class="calc-head" id="calc-head">
+    <span class="calc-title">계산기</span>
+    <div class="calc-head-right">
+      <button class="calc-mode" id="calc-mode" title="각도 단위 (도/라디안)">DEG</button>
+      <button class="calc-x" id="calc-close" title="닫기">✕</button>
+    </div>
+  </div>
+  <input type="text" id="calc-expr" class="calc-expr" placeholder="0" autocomplete="off" spellcheck="false" />
+  <div class="calc-result" id="calc-result">&nbsp;</div>
+  <div class="calc-pad" id="calc-pad">
+    <button class="calc-btn fn" data-f="(">(</button>
+    <button class="calc-btn fn" data-f=")">)</button>
+    <button class="calc-btn fn" data-f="!">n!</button>
+    <button class="calc-btn fn" data-f="%">%</button>
+    <button class="calc-btn warn" data-act="back">⌫</button>
+    <button class="calc-btn warn" data-act="clear">C</button>
+
+    <button class="calc-btn fn" data-f="sin(">sin</button>
+    <button class="calc-btn fn" data-f="cos(">cos</button>
+    <button class="calc-btn fn" data-f="tan(">tan</button>
+    <button class="calc-btn fn" data-f="ln(">ln</button>
+    <button class="calc-btn fn" data-f="log(">log</button>
+    <button class="calc-btn fn" data-f="sqrt(">√</button>
+
+    <button class="calc-btn fn" data-f="asin(">sin⁻¹</button>
+    <button class="calc-btn fn" data-f="acos(">cos⁻¹</button>
+    <button class="calc-btn fn" data-f="atan(">tan⁻¹</button>
+    <button class="calc-btn fn" data-f="^">xʸ</button>
+    <button class="calc-btn fn" data-f="^2">x²</button>
+    <button class="calc-btn fn" data-f="pi">π</button>
+
+    <button class="calc-btn num" data-f="7">7</button>
+    <button class="calc-btn num" data-f="8">8</button>
+    <button class="calc-btn num" data-f="9">9</button>
+    <button class="calc-btn op" data-f="/">÷</button>
+    <button class="calc-btn fn" data-f="e">e</button>
+    <button class="calc-btn fn" data-f="abs(">|x|</button>
+
+    <button class="calc-btn num" data-f="4">4</button>
+    <button class="calc-btn num" data-f="5">5</button>
+    <button class="calc-btn num" data-f="6">6</button>
+    <button class="calc-btn op" data-f="*">×</button>
+    <button class="calc-btn fn" data-f="exp(">eˣ</button>
+    <button class="calc-btn fn" data-f="1/(">1/x</button>
+
+    <button class="calc-btn num" data-f="1">1</button>
+    <button class="calc-btn num" data-f="2">2</button>
+    <button class="calc-btn num" data-f="3">3</button>
+    <button class="calc-btn op" data-f="-">−</button>
+    <button class="calc-btn fn" data-f="Ans">Ans</button>
+    <button class="calc-btn fn" data-f="mod">mod</button>
+
+    <button class="calc-btn num" data-f="0">0</button>
+    <button class="calc-btn num" data-f=".">.</button>
+    <button class="calc-btn fn" data-f="E">EE</button>
+    <button class="calc-btn op" data-f="+">+</button>
+    <button class="calc-btn eq" data-act="eq" style="grid-column: span 2;">=</button>
   </div>
 </div>
 
@@ -2439,13 +2573,11 @@
 
   async function loadBookOrder() {
     let order = null;
-    try { order = await Cloud.fetchOrder(); } catch (_) {}
-    if (!order) { try { order = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null'); } catch (_) {} }
+    try { order = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null'); } catch (_) {}
     bookOrder = Array.isArray(order) ? order : [];
   }
   async function saveBookOrder() {
     try { localStorage.setItem(ORDER_KEY, JSON.stringify(bookOrder)); } catch (_) {}
-    Cloud.saveOrderCloud(bookOrder);   // best effort, non-blocking
   }
   // Reorder the library array to match the saved manual order.
   // Unknown ids (newly added books) float to the top, keeping their fetch order.
@@ -3800,17 +3932,43 @@
     if (document.getElementById('reader').classList.contains('ai-open')) updateAIContextLabel();
   }
 
-  function scrollToPage(n) {
+  function scrollToPage(n, behavior = 'smooth') {
     if (!currentPDF || n < 1 || n > currentPDF.numPages) return;
     const wrap = pageWraps[n - 1];
     if (!wrap) return;
     currentPage = n;
     updatePageIndicators();
     isProgrammaticScroll = true;
-    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // re-enable page tracker after the smooth scroll settles
+    wrap.scrollIntoView({ behavior, block: 'start' });
+    // re-enable page tracker after the scroll settles
     clearTimeout(scrollToPage._t);
-    scrollToPage._t = setTimeout(() => { isProgrammaticScroll = false; }, 600);
+    scrollToPage._t = setTimeout(() => { isProgrammaticScroll = false; }, behavior === 'smooth' ? 600 : 120);
+  }
+
+  // Scroll so page n sits at the top, then keep re-pinning for a short while —
+  // nearby pages re-render at the new zoom and change height, which would otherwise
+  // shift the target page away. Re-pinning absorbs that reflow so we stay put.
+  function scrollToPageStable(n) {
+    if (!currentPDF || n < 1 || n > currentPDF.numPages) return;
+    const wrap = pageWraps[n - 1];
+    if (!wrap) return;
+    const stage = document.getElementById('reader-stage');
+    currentPage = n;
+    updatePageIndicators();
+    isProgrammaticScroll = true;
+    const pin = () => {
+      const sRect = stage.getBoundingClientRect();
+      const wRect = wrap.getBoundingClientRect();
+      stage.scrollTop += (wRect.top - sRect.top);
+    };
+    pin();
+    let frames = 0;
+    const tick = () => {
+      pin();
+      if (++frames < 45) requestAnimationFrame(tick);   // ~0.7s of re-pinning
+      else setTimeout(() => { isProgrammaticScroll = false; }, 80);
+    };
+    requestAnimationFrame(tick);
   }
 
   function closeReader() {
@@ -3834,13 +3992,21 @@
   document.getElementById('next-page').addEventListener('click', () => {
     if (currentPDF && currentPage < currentPDF.numPages) scrollToPage(currentPage + 1);
   });
+  function rezoomKeepingPage() {
+    const target = currentPage;
+    isProgrammaticScroll = true;   // freeze page tracking through the rebuild
+    buildPageList().then(async () => {
+      await renderPageAt(target);  // render target at the new scale so its size is correct
+      scrollToPageStable(target);
+    });
+  }
   document.getElementById('zoom-in').addEventListener('click', () => {
     currentScale = Math.min(currentScale + 0.25, 4);
-    buildPageList().then(() => scrollToPage(currentPage));
+    rezoomKeepingPage();
   });
   document.getElementById('zoom-out').addEventListener('click', () => {
     currentScale = Math.max(currentScale - 0.25, 0.5);
-    buildPageList().then(() => scrollToPage(currentPage));
+    rezoomKeepingPage();
   });
   document.getElementById('page-input').addEventListener('change', (e) => {
     const n = parseInt(e.target.value, 10);
@@ -4179,13 +4345,11 @@
       else if (/SERVICE_DISABLED|has not been used in project|is disabled/i.test(raw)) hint = 'Generative Language API가 비활성 상태입니다. Google Cloud 콘솔에서 해당 프로젝트에 이 API를 활성화하세요.';
       else if (/referer|referrer|blocked|API_KEY_HTTP_REFERRER|requests from this/i.test(raw)) hint = 'API 키에 사이트/앱 제한이 걸려 있습니다. AI Studio·Cloud 콘솔에서 키의 "애플리케이션 제한"을 없음으로 바꾸거나 이 사이트 주소를 허용 목록에 추가하세요.';
       else if (/404|not found|not supported/i.test(raw)) hint = '모델명을 찾을 수 없습니다 (404). 설정에서 모델명을 확인하세요 (예: gemini-2.5-flash).';
-      else if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) {
-        const sec = e.retrySec ? `약 ${Math.ceil(e.retrySec)}초 뒤 ` : '';
-        hint = `무료 한도(분당 요청 수)를 초과했습니다. ${sec}다시 시도하거나, 설정(톱니)에서 모델을 gemini-2.5-flash-lite(분당 한도 더 높음)로 바꿔보세요.`;
-      }
+      else if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) hint = '한도 초과';
       else if (/403|PERMISSION_DENIED/i.test(raw)) hint = '권한 오류 (403). 보통 ① 키의 사이트/IP 제한, ② 프로젝트의 API 비활성, ③ 지역 제한 중 하나입니다. 아래 원본 메시지를 확인하세요.';
       else if (/Failed to fetch|NetworkError/i.test(raw)) hint = '네트워크/CORS 오류 — 연결을 확인하세요.';
-      const display = (raw && raw !== hint)
+      const simple = hint === '한도 초과';
+      const display = (!simple && raw && raw !== hint)
         ? `⚠️ ${hint}\n\n\`${raw.slice(0, 400)}\``
         : '⚠️ ' + hint;
       aiTurns.push({ role: 'assistant', display, api: '(이전 응답 생성 실패)', error: true });
@@ -4408,6 +4572,248 @@
         reader.classList.add('ai-resizing');
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', stop);
+      });
+    }
+  })();
+
+  // -------- Scientific Calculator --------
+  let calcMode = 'DEG';
+  let calcAns = 0;
+
+  function toggleCalc() {
+    const p = document.getElementById('calc-panel');
+    const show = (p.style.display === 'none' || !p.style.display);
+    p.style.display = show ? 'block' : 'none';
+    document.getElementById('calc-toggle').classList.toggle('active', show);
+    if (show) setTimeout(() => document.getElementById('calc-expr').focus(), 30);
+  }
+  function toggleCalcMode() {
+    calcMode = calcMode === 'DEG' ? 'RAD' : 'DEG';
+    document.getElementById('calc-mode').textContent = calcMode;
+    calcLivePreview();
+  }
+
+  // ---- safe expression evaluator (recursive descent, no eval) ----
+  function calcTokenize(s) {
+    const toks = []; let i = 0; const n = s.length;
+    while (i < n) {
+      const c = s[i];
+      if (c === ' ') { i++; continue; }
+      if (/[0-9.]/.test(c)) {
+        let j = i + 1; while (j < n && /[0-9.]/.test(s[j])) j++;
+        toks.push({ t: 'num', v: parseFloat(s.slice(i, j)) }); i = j; continue;
+      }
+      if (/[a-zA-Z]/.test(c)) {
+        let j = i + 1; while (j < n && /[a-zA-Z0-9]/.test(s[j])) j++;
+        const name = s.slice(i, j);
+        let k = j; while (k < n && s[k] === ' ') k++;
+        if (s[k] === '(') toks.push({ t: 'func', v: name });
+        else if (name === 'mod') toks.push({ t: 'op', v: '%' });
+        else toks.push({ t: 'name', v: name });
+        i = j; continue;
+      }
+      if ('+-*/^%'.includes(c)) { toks.push({ t: 'op', v: c }); i++; continue; }
+      if (c === '(') { toks.push({ t: 'lp' }); i++; continue; }
+      if (c === ')') { toks.push({ t: 'rp' }); i++; continue; }
+      if (c === '!') { toks.push({ t: 'fact' }); i++; continue; }
+      throw new Error('알 수 없는 문자: ' + c);
+    }
+    return toks;
+  }
+
+  function calcEval(s) {
+    const toks = calcTokenize(s);
+    let p = 0;
+    const peek = () => toks[p];
+    const next = () => toks[p++];
+    const deg = (calcMode === 'DEG');
+    const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+    function parseExpr() {
+      let v = parseMul();
+      while (peek() && peek().t === 'op' && (peek().v === '+' || peek().v === '-')) {
+        const op = next().v; const r = parseMul();
+        v = op === '+' ? v + r : v - r;
+      }
+      return v;
+    }
+    const startsFactor = (tk) => tk && (tk.t === 'num' || tk.t === 'name' || tk.t === 'func' || tk.t === 'lp');
+    function parseMul() {
+      let v = parseUnary();
+      while (true) {
+        const tk = peek();
+        if (tk && tk.t === 'op' && (tk.v === '*' || tk.v === '/' || tk.v === '%')) {
+          const op = next().v; const r = parseUnary();
+          v = op === '*' ? v * r : op === '/' ? v / r : (v % r);
+        } else if (startsFactor(tk)) {
+          v = v * parseUnary();   // implicit multiplication, e.g. 2pi, 3(4)
+        } else break;
+      }
+      return v;
+    }
+    function parseUnary() {
+      const tk = peek();
+      if (tk && tk.t === 'op' && (tk.v === '-' || tk.v === '+')) {
+        const op = next().v; const v = parseUnary();
+        return op === '-' ? -v : v;
+      }
+      return parsePower();
+    }
+    function parsePower() {
+      const base = parsePostfix();
+      if (peek() && peek().t === 'op' && peek().v === '^') {
+        next(); const exp = parseUnary();   // right-assoc, allows 2^-3
+        return Math.pow(base, exp);
+      }
+      return base;
+    }
+    function parsePostfix() {
+      let v = parsePrimary();
+      while (peek() && peek().t === 'fact') { next(); v = factorial(v); }
+      return v;
+    }
+    function parsePrimary() {
+      const tk = next();
+      if (!tk) throw new Error('식이 올바르지 않습니다');
+      if (tk.t === 'num') return tk.v;
+      if (tk.t === 'lp') { const v = parseExpr(); expect('rp'); return v; }
+      if (tk.t === 'name') {
+        if (tk.v === 'pi' || tk.v === 'PI') return Math.PI;
+        if (tk.v === 'e') return Math.E;
+        if (tk.v === 'Ans') return calcAns;
+        throw new Error('알 수 없는 이름: ' + tk.v);
+      }
+      if (tk.t === 'func') { expect('lp'); const a = parseExpr(); expect('rp'); return applyFunc(tk.v, a); }
+      throw new Error('식이 올바르지 않습니다');
+    }
+    function expect(t) { const tk = next(); if (!tk || tk.t !== t) throw new Error('괄호가 맞지 않습니다'); }
+    function applyFunc(name, x) {
+      switch (name) {
+        case 'sin': return Math.sin(deg ? x * D2R : x);
+        case 'cos': return Math.cos(deg ? x * D2R : x);
+        case 'tan': return Math.tan(deg ? x * D2R : x);
+        case 'asin': return deg ? Math.asin(x) * R2D : Math.asin(x);
+        case 'acos': return deg ? Math.acos(x) * R2D : Math.acos(x);
+        case 'atan': return deg ? Math.atan(x) * R2D : Math.atan(x);
+        case 'ln': return Math.log(x);
+        case 'log': return Math.log10(x);
+        case 'sqrt': return Math.sqrt(x);
+        case 'exp': return Math.exp(x);
+        case 'abs': return Math.abs(x);
+        default: throw new Error('알 수 없는 함수: ' + name);
+      }
+    }
+    function factorial(x) {
+      if (x < 0 || !Number.isInteger(x)) throw new Error('계승은 0 이상 정수만');
+      let r = 1; for (let i = 2; i <= x; i++) r *= i; return r;
+    }
+    const result = parseExpr();
+    if (p < toks.length) throw new Error('식이 올바르지 않습니다');
+    return result;
+  }
+
+  function calcFormat(x) {
+    if (Number.isNaN(x)) return '오류';
+    if (!isFinite(x)) return x > 0 ? '∞' : '-∞';
+    return String(parseFloat(x.toPrecision(12)));
+  }
+  function calcInsert(text) {
+    const inp = document.getElementById('calc-expr');
+    if (!inp) return;
+    const s = inp.value;
+    let a = inp.selectionStart, b = inp.selectionEnd;
+    if (a == null || b == null) { a = b = s.length; }   // not focused → append
+    inp.value = s.slice(0, a) + text + s.slice(b);
+    const pos = a + text.length;
+    inp.focus();
+    try { inp.setSelectionRange(pos, pos); } catch (_) {}
+    calcLivePreview();
+  }
+  function calcBack() {
+    const inp = document.getElementById('calc-expr');
+    const s = inp.value;
+    const a = inp.selectionStart ?? s.length, b = inp.selectionEnd ?? s.length;
+    if (a === b && a > 0) { inp.value = s.slice(0, a - 1) + s.slice(b); inp.setSelectionRange(a - 1, a - 1); }
+    else { inp.value = s.slice(0, a) + s.slice(b); inp.setSelectionRange(a, a); }
+    inp.focus(); calcLivePreview();
+  }
+  function calcClear() {
+    const inp = document.getElementById('calc-expr'); inp.value = ''; inp.focus();
+    const res = document.getElementById('calc-result'); res.textContent = ''; res.classList.remove('err');
+  }
+  function calcEquals() {
+    const inp = document.getElementById('calc-expr');
+    const res = document.getElementById('calc-result');
+    const expr = inp.value.trim();
+    if (!expr) return;
+    try {
+      const v = calcEval(expr);
+      if (Number.isNaN(v)) throw new Error('오류');
+      calcAns = v;
+      const out = calcFormat(v);
+      res.classList.remove('err'); res.textContent = '= ' + out;
+      inp.value = out; inp.setSelectionRange(out.length, out.length);
+    } catch (e) {
+      res.classList.add('err'); res.textContent = e.message || '오류';
+    }
+  }
+  function calcLivePreview() {
+    const inp = document.getElementById('calc-expr');
+    const res = document.getElementById('calc-result');
+    const expr = inp.value.trim();
+    if (!expr) { res.textContent = ''; res.classList.remove('err'); return; }
+    try { const v = calcEval(expr); if (isFinite(v)) { res.classList.remove('err'); res.textContent = '= ' + calcFormat(v); } }
+    catch (_) { /* stay quiet while typing */ }
+  }
+
+  (function bindCalc() {
+    document.getElementById('calc-toggle')?.addEventListener('click', toggleCalc);
+    document.getElementById('calc-mode')?.addEventListener('click', toggleCalcMode);
+    document.getElementById('calc-close')?.addEventListener('click', toggleCalc);
+    const pad = document.getElementById('calc-pad');
+    if (pad) {
+      const handle = (btn) => {
+        const act = btn.dataset.act;
+        if (act === 'eq') return calcEquals();
+        if (act === 'back') return calcBack();
+        if (act === 'clear') return calcClear();
+        let f = btn.dataset.f;
+        if (f == null) return;
+        if (f === 'E') f = '*10^';
+        calcInsert(f);
+      };
+      pad.querySelectorAll('button').forEach((btn) => {
+        // keep the caret in the input so insertion lands at the cursor
+        btn.addEventListener('mousedown', (e) => e.preventDefault());
+        btn.addEventListener('click', () => handle(btn));
+      });
+    }
+    const inp = document.getElementById('calc-expr');
+    if (inp) {
+      inp.addEventListener('input', calcLivePreview);
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); calcEquals(); }
+      });
+    }
+    // Drag the panel by its header
+    const head = document.getElementById('calc-head');
+    const panel = document.getElementById('calc-panel');
+    if (head && panel) {
+      head.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button')) return;
+        e.preventDefault();
+        const r = panel.getBoundingClientRect();
+        const offX = e.clientX - r.left, offY = e.clientY - r.top;
+        panel.style.right = 'auto';
+        const move = (ev) => {
+          let x = ev.clientX - offX, y = ev.clientY - offY;
+          x = Math.max(4, Math.min(x, window.innerWidth - r.width - 4));
+          y = Math.max(4, Math.min(y, window.innerHeight - 40));
+          panel.style.left = x + 'px'; panel.style.top = y + 'px';
+        };
+        const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
       });
     }
   })();
@@ -5100,7 +5506,8 @@
     toggleUserMenu, dismissMigration, runMigration,
     backToAuthForm, resendVerification,
     downloadAllAsZip,
-    toggleAIPanel, sendAIQuestion, openAISettings, saveAISettings, clearAIChat, quickAsk, copyAIMessage, onModelSelectChange
+    toggleAIPanel, sendAIQuestion, openAISettings, saveAISettings, clearAIChat, quickAsk, copyAIMessage, onModelSelectChange,
+    toggleCalc, toggleCalcMode
   });
   console.log('[boot] window functions exposed — script fully loaded');
 </script>
