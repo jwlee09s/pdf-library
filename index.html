@@ -7,6 +7,9 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231D1D1F'/><stop offset='1' stop-color='%234A4A4D'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='url(%23g)'/><path d='M12 8v16h9' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231D1D1F'/><stop offset='1' stop-color='%234A4A4D'/></linearGradient></defs><rect width='180' height='180' rx='40' fill='url(%23g)'/><path d='M68 46v88h52' stroke='white' stroke-width='14' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
 <style>
   :root {
     --bg:          #FBFBFD;
@@ -328,6 +331,27 @@
     to   { opacity: 1; transform: translateY(0) scale(1); }
   }
   .book:hover { transform: translateY(-4px); }
+  .book {
+    -webkit-user-select: none; user-select: none;
+    -webkit-user-drag: none;
+    touch-action: pan-y;
+  }
+  .book img, .book canvas { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
+  /* the original card while it's being dragged — leaves an empty slot in the grid.
+     Use visibility (not opacity) so the entrance animation can't override it. */
+  .book-placeholder { visibility: hidden; pointer-events: none; animation: none; }
+  .book-placeholder:hover { transform: none; }
+  /* the floating copy that follows the cursor (full opacity, lifted) */
+  .book-drag-clone {
+    opacity: 0.96;
+    transform: scale(1.04);
+    transform-origin: center;
+    cursor: grabbing;
+  }
+  .book-drag-clone .book-actions { display: none; }
+  .book-drag-clone .book-cover { box-shadow: 0 18px 40px rgba(0,0,0,0.28); }
+  body.dragging-book { cursor: grabbing; }
+  body.dragging-book .book { cursor: grabbing; }
 
   .book-cover {
     aspect-ratio: 2 / 3;
@@ -1132,6 +1156,317 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* === AI ASSISTANT PANEL === */
+  .reader-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    position: relative;
+  }
+  .rbtn-ai {
+    background: var(--tint-2);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border: 0.5px solid var(--hairline-soft);
+    width: auto;
+    height: 32px;
+    padding: 0 12px;
+    gap: 6px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .rbtn-ai svg { width: 15px; height: 15px; }
+  .rbtn-ai.active { background: var(--blue); color: #fff; border-color: transparent; }
+  .rbtn-ai.active:hover { background: var(--blue-hover); box-shadow: var(--shadow-1); }
+
+  .ai-panel {
+    width: 0;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: saturate(180%) blur(28px);
+    backdrop-filter: saturate(180%) blur(28px);
+    border-left: 0.5px solid var(--hairline);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transition: width 0.36s var(--ease);
+  }
+  .reader.ai-open .ai-panel { width: var(--ai-panel-w, 400px); }
+  .reader.ai-resizing .ai-panel { transition: none; }
+  .reader.ai-resizing .reader-stage { user-select: none; }
+  .ai-resize {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 7px;
+    cursor: col-resize; z-index: 12; touch-action: none;
+  }
+  .ai-resize::after {
+    content: ''; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px;
+    background: transparent; transition: background 0.15s var(--ease);
+  }
+  .ai-resize:hover::after, .reader.ai-resizing .ai-resize::after { background: var(--blue); }
+
+  .ai-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 0.5px solid var(--hairline);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  .ai-head-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .ai-head-title .spark {
+    width: 22px; height: 22px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, #1D1D1F 0%, #4A4A4D 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  }
+  .ai-head-title .spark svg { width: 13px; height: 13px; }
+  .ai-head-actions { display: flex; gap: 4px; }
+  .ai-icon-btn {
+    width: 30px; height: 30px;
+    border: none; background: transparent; cursor: pointer;
+    color: var(--text-3); border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all 0.15s var(--ease-snap);
+  }
+  .ai-icon-btn:hover { background: var(--tint-2); color: var(--text); }
+  .ai-icon-btn svg { width: 16px; height: 16px; }
+
+  .ai-context-chip {
+    margin: 10px 16px 0;
+    padding: 6px 10px;
+    background: var(--tint-1);
+    border: 0.5px solid var(--hairline-soft);
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--text-3);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .ai-context-chip svg { width: 12px; height: 12px; flex-shrink: 0; }
+  .ai-context-chip select {
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    background: var(--surface);
+    border: 0.5px solid var(--border-2);
+    border-radius: 6px;
+    padding: 2px 6px;
+    cursor: pointer;
+    outline: none;
+  }
+  .ai-context-chip input[type="number"] {
+    width: 48px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text);
+    background: var(--surface);
+    border: 0.5px solid var(--border-2);
+    border-radius: 6px;
+    padding: 2px 4px;
+    outline: none;
+    margin: 0 2px;
+    -moz-appearance: textfield;
+  }
+  .ai-context-chip #ai-context-label { color: var(--text-4); margin-left: auto; }
+  .ai-context-chip .ai-incl-img {
+    display: inline-flex; align-items: center; gap: 3px;
+    cursor: pointer; color: var(--text-3); user-select: none;
+  }
+  .ai-context-chip .ai-incl-img input { margin: 0; cursor: pointer; }
+
+  .ai-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ai-empty {
+    margin: auto;
+    text-align: center;
+    color: var(--text-4);
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 260px;
+  }
+  .ai-empty .big {
+    font-size: 15px;
+    color: var(--text-2);
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .ai-suggestions { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+  .ai-suggestion {
+    text-align: left;
+    background: var(--surface);
+    border: 0.5px solid var(--border-2);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: all 0.15s var(--ease-snap);
+  }
+  .ai-suggestion:hover { background: var(--bg-2); border-color: var(--border); transform: translateY(-1px); }
+
+  .ai-msg { display: flex; flex-direction: column; max-width: 92%; }
+  .ai-msg.user { align-self: flex-end; align-items: flex-end; }
+  .ai-msg.assistant { align-self: flex-start; align-items: flex-start; }
+  .ai-bubble {
+    padding: 10px 13px;
+    border-radius: 14px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    letter-spacing: -0.005em;
+    word-break: break-word;
+  }
+  .ai-msg.user .ai-bubble {
+    background: var(--blue);
+    color: #fff;
+    border-bottom-right-radius: 5px;
+  }
+  .ai-msg.assistant .ai-bubble {
+    background: var(--surface);
+    border: 0.5px solid var(--border-2);
+    color: var(--text);
+    border-bottom-left-radius: 5px;
+    box-shadow: var(--shadow-1);
+  }
+  .ai-bubble p { margin: 0 0 8px; }
+  .ai-bubble p:last-child { margin-bottom: 0; }
+  .ai-bubble strong { font-weight: 600; }
+  .ai-bubble code {
+    background: var(--tint-2);
+    padding: 1px 5px;
+    border-radius: 5px;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 0.88em;
+  }
+  .ai-bubble ul, .ai-bubble ol { margin: 4px 0 8px; padding-left: 20px; }
+  .ai-bubble li { margin: 2px 0; }
+  .ai-bubble .ai-h { font-weight: 600; line-height: 1.3; margin: 10px 0 4px; color: var(--text); }
+  .ai-bubble .ai-h:first-child { margin-top: 0; }
+  .ai-bubble .ai-h1 { font-size: 1.18em; }
+  .ai-bubble .ai-h2 { font-size: 1.10em; }
+  .ai-bubble .ai-h3 { font-size: 1.03em; }
+  .ai-bubble .ai-h4, .ai-bubble .ai-h5, .ai-bubble .ai-h6 { font-size: 1em; color: var(--text-2); }
+  .ai-bubble .ai-hr { border: none; border-top: 0.5px solid var(--border-2); margin: 10px 0; }
+  .ai-msg-actions { margin-top: 4px; padding-left: 2px; }
+  .ai-attach-note { margin-top: 4px; font-size: 10.5px; color: var(--text-4); }
+  .ai-copy {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text-4); font-family: inherit; font-size: 11px;
+    padding: 2px 5px; border-radius: 6px;
+    transition: all 0.15s var(--ease-snap);
+  }
+  .ai-copy:hover { background: var(--tint-2); color: var(--text-2); }
+  .ai-copy svg { width: 13px; height: 13px; }
+  .ai-bubble .ai-math-block { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
+  .ai-bubble .katex { font-size: 1.04em; }
+  .ai-bubble .katex-display { margin: 6px 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  .ai-typing { display: inline-flex; gap: 4px; align-items: center; padding: 4px 2px; }
+  .ai-typing span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-4);
+    animation: aiBounce 1.2s infinite ease-in-out;
+  }
+  .ai-typing span:nth-child(2) { animation-delay: 0.15s; }
+  .ai-typing span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes aiBounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-5px); opacity: 1; } }
+
+  .ai-input-bar {
+    flex-shrink: 0;
+    padding: 12px 16px 16px;
+    border-top: 0.5px solid var(--hairline);
+  }
+  .ai-input-wrap {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 16px;
+    padding: 7px 7px 7px 14px;
+    transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  }
+  .ai-input-wrap:focus-within { border-color: rgba(0,0,0,0.3); box-shadow: 0 0 0 4px rgba(0,0,0,0.06); }
+  .ai-input-wrap textarea {
+    flex: 1;
+    border: none;
+    outline: none;
+    resize: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--text);
+    max-height: 120px;
+    padding: 5px 0;
+  }
+  .ai-input-wrap textarea::placeholder { color: var(--text-4); }
+  .ai-send {
+    flex-shrink: 0;
+    width: 30px; height: 30px;
+    border: none; border-radius: 10px;
+    background: var(--blue); color: #fff;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all 0.15s var(--ease-snap);
+  }
+  .ai-send:hover:not(:disabled) { background: var(--blue-hover); transform: translateY(-1px); }
+  .ai-send:disabled { background: #C7C7CC; cursor: not-allowed; }
+  .ai-send svg { width: 15px; height: 15px; }
+
+  .ai-keyview { padding: 20px 18px; overflow-y: auto; }
+  .ai-keyview h4 { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .ai-keyview p { font-size: 12.5px; line-height: 1.5; color: var(--text-3); margin-bottom: 14px; }
+  .ai-keyview p a { color: var(--text); text-decoration: underline; }
+  .ai-keyview label { font-size: 11px; font-weight: 600; color: var(--text-3); display: block; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .ai-keyview input {
+    width: 100%;
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    margin-bottom: 12px;
+  }
+  .ai-keyview input:focus { border-color: rgba(0,0,0,0.3); box-shadow: 0 0 0 3px rgba(0,0,0,0.06); }
+  .ai-keyview .hint { font-size: 11px; color: var(--text-4); margin: -6px 0 14px; line-height: 1.5; }
+  .ai-keyview .key-saved { font-size: 11.5px; color: var(--green); margin-bottom: 12px; display: none; }
+  .ai-keyview .key-saved.show { display: block; }
+
+  @media (max-width: 768px) {
+    .reader.ai-open .ai-panel { width: 100%; }
+    .ai-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 5; }
+  }
+
   /* === TOAST === */
   .toast {
     position: fixed;
@@ -1616,6 +1951,21 @@
   </div>
 </div>
 
+<!-- Prompt (text input) Dialog -->
+<div class="modal-bg" id="prompt-modal">
+  <div class="modal">
+    <h3 id="prompt-title">입력</h3>
+    <div class="lead" id="prompt-message" style="display:none;"></div>
+    <div class="field">
+      <input type="text" id="prompt-input" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="prompt-cancel">취소</button>
+      <button class="btn btn-primary" id="prompt-ok">확인</button>
+    </div>
+  </div>
+</div>
+
 <!-- Confirm Dialog -->
 <div class="modal-bg" id="confirm-modal">
   <div class="modal confirm">
@@ -1676,13 +2026,82 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
         </button>
       </div>
+      <button class="rbtn rbtn-ai" id="ai-toggle" onclick="toggleAIPanel()" title="AI에게 질문 (이 페이지 기준)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg>
+        <span>AI</span>
+      </button>
       <button class="rbtn rbtn-close" onclick="closeReader()" title="닫기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
   </div>
-  <div class="reader-stage" id="reader-stage">
-    <div class="reader-loading"><div class="spinner"></div>Loading...</div>
+  <div class="reader-body">
+    <div class="reader-stage" id="reader-stage">
+      <div class="reader-loading"><div class="spinner"></div>Loading...</div>
+    </div>
+    <aside class="ai-panel" id="ai-panel">
+      <div class="ai-resize" id="ai-resize" title="드래그하여 너비 조절"></div>
+      <div class="ai-head">
+        <div class="ai-head-title">
+          <span class="spark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></svg></span>
+          질문하기
+        </div>
+        <div class="ai-head-actions">
+          <button class="ai-icon-btn" id="ai-settings-btn" onclick="openAISettings()" title="API 키 설정">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <button class="ai-icon-btn" id="ai-clear-btn" onclick="clearAIChat()" title="대화 초기화">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          </button>
+          <button class="ai-icon-btn" onclick="toggleAIPanel()" title="닫기">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat view -->
+      <div id="ai-chat-view" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+        <div class="ai-context-chip" id="ai-context-chip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span>컨텍스트</span>
+          <select id="ai-scope">
+            <option value="current">이 페이지</option>
+            <option value="window">이 페이지 ±2</option>
+            <option value="range">범위 지정</option>
+            <option value="all">전체 문서</option>
+          </select>
+          <span id="ai-range-inputs" style="display:none;">
+            <input type="number" id="ai-range-from" min="1" />–<input type="number" id="ai-range-to" min="1" />
+          </span>
+          <label class="ai-incl-img" title="페이지 이미지를 함께 보내 그림·도표·수식을 읽게 합니다">
+            <input type="checkbox" id="ai-incl-img" /> 이미지 포함
+          </label>
+          <span id="ai-context-label"></span>
+        </div>
+        <div class="ai-messages" id="ai-messages"></div>
+        <div class="ai-input-bar">
+          <div class="ai-input-wrap">
+            <textarea id="ai-input" rows="1" placeholder="이 페이지에 대해 질문하세요…"></textarea>
+            <button class="ai-send" id="ai-send-btn" onclick="sendAIQuestion()" title="보내기 (Enter)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- API key setup view -->
+      <div id="ai-key-view" class="ai-keyview" style="display:none;">
+        <h4>Gemini API 키 (무료)</h4>
+        <p>Google AI Studio에서 신용카드 없이 무료 키를 발급받을 수 있어요. 키는 이 브라우저(localStorage)에만 저장됩니다. 무료 티어는 입력·응답이 구글 서비스 개선에 쓰일 수 있어요. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">무료 키 발급받기 →</a></p>
+        <div class="key-saved" id="ai-key-saved">✓ 키가 저장되어 있습니다</div>
+        <label>API Key</label>
+        <input type="password" id="ai-key-input" placeholder="AIza..." autocomplete="off" />
+        <label>모델</label>
+        <input type="text" id="ai-model-input" placeholder="gemini-2.5-flash" />
+        <div class="hint">무료 추천: gemini-2.5-flash (10 RPM) · gemini-2.5-flash-lite (15 RPM, 더 가벼움)</div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="saveAISettings()">저장</button>
+      </div>
+    </aside>
   </div>
 </div>
 
@@ -1919,6 +2338,31 @@
         .from('user_meta')
         .upsert({ user_id: this.uid(), folders: list });
       if (error) throw error;
+    },
+
+    // Manual book order — best effort; the 'book_order' column may not exist yet.
+    async fetchOrder() {
+      try {
+        const { data, error } = await supabase
+          .from('user_meta')
+          .select('book_order')
+          .maybeSingle();
+        if (error) return null;
+        return data?.book_order || null;
+      } catch (_) { return null; }
+    },
+
+    async saveOrderCloud(list) {
+      try {
+        const { error } = await supabase
+          .from('user_meta')
+          .upsert({ user_id: this.uid(), book_order: list });
+        if (error) throw error;
+        return true;
+      } catch (e) {
+        console.warn('book order cloud save skipped (column may be missing)', e);
+        return false;
+      }
     }
   };
 
@@ -1931,6 +2375,7 @@
   const pdfDocCache = {};   // parsed PDF documents, kept in memory across opens
   let pendingFile = null;
   let folders = [];          // explicit folder names (preserves empty folders too)
+  let bookOrder = [];        // manual display order (array of book ids)
   let currentFilter = '__all'; // '__all' | '__unfiled' | folder name
   let openPopoverBookId = null;
   let migrationData = null;  // { books: [...], folders: [...] } when local data found
@@ -1948,6 +2393,7 @@
       library = [];
     }
     try { await loadFolders(); console.log('[loadLibrary] folders loaded:', folders.length); } catch (e) { console.error('[loadLibrary] loadFolders:', e); folders = []; }
+    try { await loadBookOrder(); } catch (e) { console.error('[loadLibrary] loadBookOrder:', e); bookOrder = []; }
     try { renderFilterBar(); } catch (e) { console.error('[loadLibrary] renderFilterBar:', e); }
     try { renderShelf(); } catch (e) { console.error('[loadLibrary] renderShelf:', e); }
     try { updateStats(); } catch (e) { console.error('[loadLibrary] updateStats:', e); }
@@ -1968,6 +2414,34 @@
   }
   async function saveFolders() {
     try { await Cloud.saveFoldersCloud(folders); } catch (e) { console.warn('Folder save failed', e); }
+  }
+
+  // -------- Manual book order --------
+  const ORDER_KEY = 'library:order';
+
+  async function loadBookOrder() {
+    let order = null;
+    try { order = await Cloud.fetchOrder(); } catch (_) {}
+    if (!order) { try { order = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null'); } catch (_) {} }
+    bookOrder = Array.isArray(order) ? order : [];
+  }
+  async function saveBookOrder() {
+    try { localStorage.setItem(ORDER_KEY, JSON.stringify(bookOrder)); } catch (_) {}
+    Cloud.saveOrderCloud(bookOrder);   // best effort, non-blocking
+  }
+  // Reorder the library array to match the saved manual order.
+  // Unknown ids (newly added books) float to the top, keeping their fetch order.
+  function applyBookOrder() {
+    if (!bookOrder.length) return;
+    const idx = new Map(bookOrder.map((id, i) => [id, i]));
+    library = library
+      .map((b, i) => ({ b, i }))
+      .sort((x, y) => {
+        const ix = idx.has(x.b.id) ? idx.get(x.b.id) : -1;
+        const iy = idx.has(y.b.id) ? idx.get(y.b.id) : -1;
+        return ix !== iy ? ix - iy : x.i - y.i;
+      })
+      .map(o => o.b);
   }
 
   // Union of explicit folders and any folder name used by books
@@ -2039,7 +2513,7 @@
   }
 
   async function promptNewFolder() {
-    const name = prompt('새 폴더 이름:');
+    const name = await customPrompt({ title: '새 폴더', placeholder: '폴더 이름을 입력하세요', okText: '만들기' });
     if (!name) return;
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -2414,6 +2888,8 @@
     const shelf = document.getElementById('shelf');
     const q = document.getElementById('search').value.trim().toLowerCase();
 
+    applyBookOrder();   // honor manual drag order
+
     // Apply folder filter first, then search
     let filtered = library;
     if (currentFilter === '__unfiled') filtered = filtered.filter(b => !b.folder);
@@ -2505,12 +2981,7 @@
       </div>
     `).join('');
 
-    shelf.querySelectorAll('.book').forEach(el => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.book-action')) return;
-        openReader(el.dataset.id);
-      });
-    });
+    setupBookDrag(shelf);   // handles both click-to-open and drag-to-reorder
     shelf.querySelectorAll('.book-folder-btn').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2545,6 +3016,149 @@
     });
     // Render any missing thumbnails with limited concurrency
     renderThumbnailsThrottled(filtered.filter(b => !thumbnailCache[b.id]));
+  }
+
+  // -------- Drag to reorder books (pointer-based, with FLIP animation) --------
+  let bookDrag = null;  // { id, el, clone, offX, offY, shelf }
+
+  function setupBookDrag(shelf) {
+    shelf.querySelectorAll('.book').forEach(el => {
+      el.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('.book-action')) return;   // let action buttons work
+        const id = el.dataset.id;
+        const startX = e.clientX, startY = e.clientY;
+        const r = el.getBoundingClientRect();
+        const offX = startX - r.left, offY = startY - r.top;
+        let started = false;
+
+        const move = (ev) => {
+          if (!started) {
+            if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
+            started = true;
+            beginBookDrag(el, id, shelf, offX, offY, ev);
+          }
+          onBookDragMove(ev);
+        };
+        const up = (ev) => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          window.removeEventListener('pointercancel', up);
+          if (started) endBookDrag();
+          else openReader(id);   // no movement → treat as a click
+        };
+        // prevent native image-drag / text selection on mouse
+        if (e.pointerType === 'mouse') e.preventDefault();
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
+      });
+    });
+  }
+
+  function beginBookDrag(el, id, shelf, offX, offY, ev) {
+    const r = el.getBoundingClientRect();
+    const clone = el.cloneNode(true);
+    clone.classList.add('book-drag-clone');
+    clone.style.cssText +=
+      `position:fixed; left:${r.left}px; top:${r.top}px; width:${r.width}px; height:${r.height}px; margin:0; z-index:9999; pointer-events:none;`;
+    document.body.appendChild(clone);
+    el.classList.add('book-placeholder');
+    document.body.classList.add('dragging-book');
+    bookDrag = { id, el, clone, offX, offY, shelf };
+    onBookDragMove(ev);
+  }
+
+  function onBookDragMove(ev) {
+    if (!bookDrag) return;
+    bookDrag.clone.style.left = (ev.clientX - bookDrag.offX) + 'px';
+    bookDrag.clone.style.top  = (ev.clientY - bookDrag.offY) + 'px';
+    const placeholder = bookDrag.el;
+    const after = getDragAfterElement(bookDrag.shelf, ev.clientX, ev.clientY);
+    if (after !== placeholder && after !== placeholder.nextSibling) {
+      flipMove(bookDrag.shelf, () => {
+        if (after == null) bookDrag.shelf.appendChild(placeholder);
+        else bookDrag.shelf.insertBefore(placeholder, after);
+      });
+    }
+  }
+
+  function endBookDrag() {
+    if (!bookDrag) return;
+    const { el, clone, shelf } = bookDrag;
+    const r = el.getBoundingClientRect();
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clone.remove();
+      el.classList.remove('book-placeholder');
+      document.body.classList.remove('dragging-book');
+      commitBookOrder(shelf);
+      bookDrag = null;
+    };
+    // settle the floating clone into the final slot, then clean up
+    clone.style.transition = 'left 0.22s cubic-bezier(.2,.8,.2,1), top 0.22s cubic-bezier(.2,.8,.2,1)';
+    clone.style.left = r.left + 'px';
+    clone.style.top = r.top + 'px';
+    clone.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 280);
+  }
+
+  // FLIP: animate sibling cards smoothly from old position to new after a DOM mutation
+  function flipMove(container, mutate) {
+    const items = [...container.querySelectorAll('.book:not(.book-placeholder)')];
+    const first = new Map(items.map(el => [el, el.getBoundingClientRect()]));
+    mutate();
+    for (const el of items) {
+      const f = first.get(el);
+      if (!f) continue;
+      const l = el.getBoundingClientRect();
+      const dx = f.left - l.left, dy = f.top - l.top;
+      if (!dx && !dy) continue;
+      el.style.transition = 'none';
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+      requestAnimationFrame(() => {
+        el.style.transition = 'transform 0.26s cubic-bezier(.2,.8,.2,1)';
+        el.style.transform = '';
+      });
+    }
+  }
+
+  // Find the card the dragged item should be inserted before (grid-aware: uses center distance)
+  function getDragAfterElement(container, x, y) {
+    const els = [...container.querySelectorAll('.book:not(.book-placeholder)')];
+    let best = { dist: Infinity, el: null, before: true };
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const dist = Math.hypot(x - cx, y - cy);
+      if (dist < best.dist) {
+        const before = y < cy - r.height / 2 ? true
+          : y > cy + r.height / 2 ? false
+          : x < cx;   // same row → left/right of center
+        best = { dist, el, before };
+      }
+    }
+    if (!best.el) return null;
+    return best.before ? best.el : best.el.nextElementSibling;
+  }
+
+  // Read the new visual order and fold it back into the global library order
+  function commitBookOrder(shelf) {
+    const shownIds = [...shelf.querySelectorAll('.book')].map(el => el.dataset.id);
+    if (!shownIds.length) return;
+    const shownSet = new Set(shownIds);
+    const byId = new Map(library.map(b => [b.id, b]));
+    let qi = 0;
+    // Keep books not currently shown (other folders / filtered out) where they are;
+    // slot the shown books into the new order at the positions they occupied.
+    const result = library.map(b => shownSet.has(b.id) ? byId.get(shownIds[qi++]) : b);
+    const changed = result.some((b, i) => b.id !== library[i].id);
+    if (!changed) return;
+    library = result;
+    bookOrder = library.map(b => b.id);
+    saveBookOrder();
   }
 
   async function renderThumbnail(id) {
@@ -2999,6 +3613,9 @@
 
       currentPage = 1;
       currentScale = 1.25;
+      aiTurns = [];
+      aiRangeFrom = 1; aiRangeTo = 1;
+      if (document.getElementById('reader').classList.contains('ai-open')) { showAIChatView(); updateAIContextLabel(); }
       document.getElementById('page-total').textContent = currentPDF.numPages;
       document.getElementById('page-input').max = currentPDF.numPages;
       await buildPageList();
@@ -3162,6 +3779,7 @@
     document.getElementById('zoom-level').textContent = Math.round(currentScale * 100) + '%';
     document.getElementById('prev-page').disabled = currentPage <= 1;
     document.getElementById('next-page').disabled = currentPage >= currentPDF.numPages;
+    if (document.getElementById('reader').classList.contains('ai-open')) updateAIContextLabel();
   }
 
   function scrollToPage(n) {
@@ -3179,6 +3797,9 @@
 
   function closeReader() {
     document.getElementById('reader').classList.remove('open');
+    document.getElementById('reader').classList.remove('ai-open');
+    document.getElementById('ai-toggle').classList.remove('active');
+    aiTurns = [];
     currentPDF = null;
     pageWraps = [];
     pageObjects = [];
@@ -3211,7 +3832,8 @@
 
   document.addEventListener('keydown', (e) => {
     if (!document.getElementById('reader').classList.contains('open')) return;
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
     if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); document.getElementById('prev-page').click(); }
     else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); document.getElementById('next-page').click(); }
     else if (e.key === 'Escape') closeReader();
@@ -3220,6 +3842,519 @@
   });
 
   document.getElementById('search').addEventListener('input', () => renderShelf());
+
+  // -------- AI Assistant (current-page context, direct browser → Google Gemini API, free tier) --------
+  let aiTurns = [];        // { role, display, api, error? }
+  let aiBusy = false;
+  let aiScope = 'current'; // 'current' | 'window' | 'range' | 'all'
+  let aiRangeFrom = 1, aiRangeTo = 1;
+  let aiInclImg = false;   // also send page images (figures/diagrams)
+
+  function getAIKey()   { return localStorage.getItem('gemini:key') || ''; }
+  function getAIModel() { return localStorage.getItem('gemini:model') || 'gemini-2.5-flash'; }
+
+  function toggleAIPanel() {
+    const reader = document.getElementById('reader');
+    const open = reader.classList.toggle('ai-open');
+    document.getElementById('ai-toggle').classList.toggle('active', open);
+    if (open) {
+      updateAIContextLabel();
+      if (!getAIKey()) openAISettings();
+      else showAIChatView();
+      setTimeout(() => document.getElementById('ai-input')?.focus(), 380);
+    }
+  }
+
+  function showAIChatView() {
+    document.getElementById('ai-key-view').style.display = 'none';
+    document.getElementById('ai-chat-view').style.display = 'flex';
+    renderAIMessages();
+  }
+
+  function openAISettings() {
+    document.getElementById('ai-chat-view').style.display = 'none';
+    document.getElementById('ai-key-view').style.display = 'block';
+    document.getElementById('ai-key-input').value = getAIKey();
+    document.getElementById('ai-model-input').value = getAIModel();
+    document.getElementById('ai-key-saved').classList.toggle('show', !!getAIKey());
+  }
+
+  function saveAISettings() {
+    const key = document.getElementById('ai-key-input').value.trim();
+    const model = document.getElementById('ai-model-input').value.trim() || 'gemini-2.5-flash';
+    if (!key) { toast('API 키를 입력하세요', true); return; }
+    localStorage.setItem('gemini:key', key);
+    localStorage.setItem('gemini:model', model);
+    toast('AI 설정이 저장되었습니다');
+    showAIChatView();
+    setTimeout(() => document.getElementById('ai-input')?.focus(), 50);
+  }
+
+  function clearAIChat() {
+    aiTurns = [];
+    renderAIMessages();
+  }
+
+  // Which pages feed the AI, based on the selected scope
+  function getContextPages() {
+    const total = currentPDF ? currentPDF.numPages : 0;
+    if (!total) return [];
+    const cur = currentPage;
+    let from, to;
+    switch (aiScope) {
+      case 'all':    from = 1; to = total; break;
+      case 'window': from = Math.max(1, cur - 2); to = Math.min(total, cur + 2); break;
+      case 'range':
+        from = Math.max(1, Math.min(aiRangeFrom || cur, total));
+        to   = Math.max(from, Math.min(aiRangeTo || cur, total));
+        break;
+      default:       from = to = cur;
+    }
+    const pages = [];
+    for (let i = from; i <= to; i++) pages.push(i);
+    return pages;
+  }
+
+  function updateAIContextLabel() {
+    const el = document.getElementById('ai-context-label');
+    if (!el) return;
+    if (!currentPDF) { el.textContent = '문서를 여세요'; return; }
+    const pages = getContextPages();
+    if (pages.length <= 1) el.textContent = `p.${pages[0] || currentPage}`;
+    else el.textContent = `p.${pages[0]}–${pages[pages.length - 1]} · ${pages.length}쪽`;
+  }
+
+  // Extract selectable text from one page (pageObjects is sparse; fetch if needed)
+  async function getPageText(n) {
+    if (!currentPDF) return '';
+    try {
+      let page = pageObjects[n - 1];
+      if (!page) { page = await currentPDF.getPage(n); pageObjects[n - 1] = page; }
+      const tc = await page.getTextContent();
+      let out = '';
+      for (const it of tc.items) { out += it.str; out += it.hasEOL ? '\n' : ' '; }
+      return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    } catch (e) {
+      console.warn('getTextContent failed', n, e);
+      return '';
+    }
+  }
+
+  // Gather text across the selected pages, with page markers and a size cap
+  async function getContextText(pages) {
+    const MAX = 120000;   // ~ keeps requests well within free-tier token limits
+    let out = '', truncated = false, gotAny = false;
+    for (const n of pages) {
+      const txt = await getPageText(n);
+      if (txt) gotAny = true;
+      const header = `\n\n===== p.${n} =====\n`;
+      if (out.length + header.length + txt.length > MAX) {
+        const room = MAX - out.length - header.length;
+        if (room > 200) out += header + txt.slice(0, room);
+        truncated = true;
+        break;
+      }
+      out += header + txt;
+    }
+    return { text: out.trim(), truncated, gotAny };
+  }
+
+  // Render a page to a base64 JPEG for vision input (used when text extraction fails)
+  async function getPageImage(n, maxDim = 1600) {
+    if (!currentPDF) return null;
+    try {
+      let page = pageObjects[n - 1];
+      if (!page) { page = await currentPDF.getPage(n); pageObjects[n - 1] = page; }
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.max(0.5, Math.min(maxDim / base.width, maxDim / base.height, 3));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);   // flatten transparency
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      return { mime: 'image/jpeg', data: dataUrl.split(',')[1] };
+    } catch (e) {
+      console.warn('getPageImage failed', n, e);
+      return null;
+    }
+  }
+
+  // Call Google Gemini (free-tier capable). Key sent via header, not URL.
+  async function callGemini(history) {
+    // history: [{ role:'user'|'model', text }]
+    const model = getAIModel();
+    const systemText =
+      '당신은 PDF 문서를 함께 읽는 한국어 독서 어시스턴트입니다. ' +
+      '사용자가 선택한 페이지 범위의 추출 텍스트가 각 질문과 함께 제공됩니다. 본문은 "===== p.N =====" 표식으로 페이지가 구분됩니다. ' +
+      '텍스트를 추출할 수 없는 페이지는 페이지 이미지가 대신 첨부될 수 있으니, 그 경우 이미지를 읽어 답하세요. ' +
+      '그 내용을 우선 근거로 명확하고 간결하게 답하고, 특정 내용을 언급할 때는 가능하면 (p.N)처럼 페이지를 표시하세요. ' +
+      '범위에 없는 내용이면 그 사실을 먼저 밝히고, 도움이 되면 일반 지식으로 보충하되 그렇다고 표시하세요. ' +
+      '수식은 LaTeX로 작성하세요. 인라인 수식은 \\( ... \\) 로, 독립된 줄의 수식은 $$ ... $$ 로 감싸고, ' +
+      '$$ ... $$ 한 쌍은 줄바꿈 없이 한 줄에 쓰세요.';
+
+    const body = {
+      system_instruction: { parts: [{ text: systemText }] },
+      contents: history.map(m => {
+        const parts = [];
+        if (m.images && m.images.length) {
+          for (const img of m.images) parts.push({ inline_data: { mime_type: img.mime, data: img.data } });
+        }
+        parts.push({ text: m.text });
+        return { role: m.role, parts };
+      }),
+      generationConfig: {
+        maxOutputTokens: 8192,
+        temperature: 0.4,
+        // Disable "thinking" so the token budget goes to the visible answer
+        // (gemini-2.5/3 flash supports this; prevents empty MAX_TOKENS replies).
+        thinkingConfig: { thinkingBudget: 0 }
+      }
+    };
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': getAIKey()
+        },
+        body: JSON.stringify(body)
+      }
+    );
+
+    if (!res.ok) {
+      let detail = '';
+      try { const j = await res.json(); detail = j?.error?.message || JSON.stringify(j); }
+      catch (_) { try { detail = await res.text(); } catch (__) {} }
+      throw new Error(`${res.status} ${detail}`.trim());
+    }
+
+    const data = await res.json();
+    const cand = data.candidates && data.candidates[0];
+    if (!cand) {
+      const block = data.promptFeedback?.blockReason;
+      throw new Error(block ? `요청이 안전 필터에 차단되었습니다 (${block})` : '응답이 비어 있습니다');
+    }
+    const text = (cand.content?.parts || []).map(p => p.text || '').join('').trim();
+    const fr = cand.finishReason;
+    if (!text) {
+      if (fr === 'MAX_TOKENS') return '(답변이 너무 길어 잘렸습니다 — 더 구체적으로 질문해 보세요)';
+      if (fr === 'SAFETY' || fr === 'RECITATION') return `(응답이 ${fr} 사유로 제한되었습니다)`;
+      return '(빈 응답)';
+    }
+    if (fr === 'MAX_TOKENS') {
+      return text + '\n\n---\n⚠️ 길이 제한으로 답변이 잘렸습니다 — "계속"이라고 보내면 이어집니다.';
+    }
+    return text;
+  }
+
+  async function sendAIQuestion() {
+    if (aiBusy) return;
+    const input = document.getElementById('ai-input');
+    const q = input.value.trim();
+    if (!q) return;
+    if (!currentPDF) { toast('먼저 문서를 여세요', true); return; }
+    if (!getAIKey()) { openAISettings(); toast('먼저 API 키를 입력하세요', true); return; }
+
+    // Show the question + typing indicator first, then gather page text (can take a moment)
+    aiTurns.push({ role: 'user', display: q, api: '' });
+    input.value = '';
+    autoGrowAIInput();
+    aiBusy = true;
+    setAISending(true);
+    renderAIMessages();
+
+    const pages = getContextPages();
+    const ctx = await getContextText(pages);
+    const range = pages.length <= 1 ? `${pages[0]}페이지` : `${pages[0]}–${pages[pages.length - 1]}페이지`;
+
+    // Judge by how much real text was extracted, not merely whether ANY was.
+    // A scanned page often yields a few stray characters (e.g. a problem number),
+    // which should still fall back to sending the page image.
+    const meaningful = ctx.text.replace(/=====\s*p\.\d+\s*=====/g, '').trim();
+    const factor = Math.min(pages.length, 5);
+    const enoughText = meaningful.length >= 50 * factor;
+
+    // Render page images when text is too sparse, or when the user forces it (figures/diagrams)
+    let imgs = [];
+    if (!enoughText || aiInclImg) {
+      for (const n of pages.slice(0, 5)) { const im = await getPageImage(n); if (im) imgs.push(im); }
+    }
+    const images = imgs.length ? imgs : null;
+    const imgNote = (imgs.length && pages.length > imgs.length) ? ` (앞 ${imgs.length}쪽 이미지만 첨부)` : '';
+
+    let apiContent;
+    if (enoughText) {
+      const imgLine = images ? `\n(페이지 이미지도 함께 첨부${imgNote}.)` : '';
+      apiContent = `[PDF ${range} 내용${ctx.truncated ? ' (길이 제한으로 일부 잘림)' : ''}]\n"""\n${ctx.text}\n"""${imgLine}\n\n질문: ${q}`;
+    } else if (images) {
+      const hint = meaningful ? `\n\n(참고로 추출된 일부 텍스트: ${meaningful.slice(0, 500)})` : '';
+      apiContent = `(선택한 ${range}는 추출 텍스트가 거의 없어 페이지 이미지를 첨부합니다${imgNote}.)${hint}\n\n질문: ${q}`;
+    } else if (meaningful) {
+      apiContent = `[PDF ${range} 내용]\n"""\n${ctx.text}\n"""\n\n질문: ${q}`;
+    } else {
+      apiContent = `(선택한 ${range}에서 텍스트도 이미지도 가져오지 못했습니다.)\n\n질문: ${q}`;
+    }
+    // attach the real context to the just-pushed user turn (for API history)
+    aiTurns[aiTurns.length - 1].api = apiContent;
+    aiTurns[aiTurns.length - 1].images = images;
+
+    try {
+      // Gemini uses roles 'user' and 'model'; map assistant→model. Keep recent history.
+      let hist = aiTurns.slice(-12).map(t => ({
+        role: t.role === 'assistant' ? 'model' : 'user',
+        text: t.api ?? t.display
+      }));
+      while (hist.length && hist[0].role !== 'user') hist.shift();
+      // Attach images ONLY to the current (final) user turn to keep history cheap
+      const lastTurn = aiTurns[aiTurns.length - 1];
+      if (lastTurn.images && hist.length && hist[hist.length - 1].role === 'user') {
+        hist[hist.length - 1].images = lastTurn.images;
+      }
+      const answer = await callGemini(hist);
+      aiTurns.push({ role: 'assistant', display: answer, api: answer });
+    } catch (e) {
+      console.error('Gemini API error', e);
+      const raw = e.message || '알 수 없는 오류';
+      let hint = raw;
+      if (/API key not valid|API_KEY_INVALID|invalid.*key/i.test(raw)) hint = 'API 키가 올바르지 않습니다. 설정에서 키를 확인하세요.';
+      else if (/SERVICE_DISABLED|has not been used in project|is disabled/i.test(raw)) hint = 'Generative Language API가 비활성 상태입니다. Google Cloud 콘솔에서 해당 프로젝트에 이 API를 활성화하세요.';
+      else if (/referer|referrer|blocked|API_KEY_HTTP_REFERRER|requests from this/i.test(raw)) hint = 'API 키에 사이트/앱 제한이 걸려 있습니다. AI Studio·Cloud 콘솔에서 키의 "애플리케이션 제한"을 없음으로 바꾸거나 이 사이트 주소를 허용 목록에 추가하세요.';
+      else if (/404|not found|not supported/i.test(raw)) hint = '모델명을 찾을 수 없습니다 (404). 설정에서 모델명을 확인하세요 (예: gemini-2.5-flash).';
+      else if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) hint = '무료 한도를 초과했습니다 (429). 분당/일일 한도 — 잠시 후 다시 시도하세요.';
+      else if (/403|PERMISSION_DENIED/i.test(raw)) hint = '권한 오류 (403). 보통 ① 키의 사이트/IP 제한, ② 프로젝트의 API 비활성, ③ 지역 제한 중 하나입니다. 아래 원본 메시지를 확인하세요.';
+      else if (/Failed to fetch|NetworkError/i.test(raw)) hint = '네트워크/CORS 오류 — 연결을 확인하세요.';
+      const display = (raw && raw !== hint)
+        ? `⚠️ ${hint}\n\n\`${raw.slice(0, 400)}\``
+        : '⚠️ ' + hint;
+      aiTurns.push({ role: 'assistant', display, api: '(이전 응답 생성 실패)', error: true });
+    } finally {
+      aiBusy = false;
+      setAISending(false);
+      renderAIMessages();
+    }
+  }
+
+  function quickAsk(text) {
+    const i = document.getElementById('ai-input');
+    i.value = text;
+    sendAIQuestion();
+  }
+
+  function setAISending(sending) {
+    document.getElementById('ai-send-btn').disabled = sending;
+    document.getElementById('ai-input').disabled = sending;
+  }
+
+  function renderAIMessages() {
+    const box = document.getElementById('ai-messages');
+    if (!box) return;
+    if (aiTurns.length === 0 && !aiBusy) {
+      box.innerHTML =
+        '<div class="ai-empty">' +
+          '<div class="big">이 페이지에 대해 물어보세요</div>' +
+          '지금 보고 있는 페이지 내용을 바탕으로 답해드려요.' +
+          '<div class="ai-suggestions">' +
+            '<button class="ai-suggestion" onclick="quickAsk(\'이 페이지 핵심을 3줄로 요약해줘\')">이 페이지 핵심을 3줄로 요약해줘</button>' +
+            '<button class="ai-suggestion" onclick="quickAsk(\'이 페이지에서 가장 중요한 개념을 설명해줘\')">가장 중요한 개념을 설명해줘</button>' +
+            '<button class="ai-suggestion" onclick="quickAsk(\'어려운 용어를 쉽게 풀어서 설명해줘\')">어려운 용어를 쉽게 풀어줘</button>' +
+          '</div>' +
+        '</div>';
+      return;
+    }
+    let html = '';
+    aiTurns.forEach((t, i) => {
+      const body = t.role === 'assistant' ? formatAIMarkdown(t.display) : escapeHTML(t.display);
+      let actions = '';
+      if (t.role === 'assistant' && !t.error) {
+        actions = `<div class="ai-msg-actions"><button class="ai-copy" onclick="copyAIMessage(${i})" title="복사">` +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>복사</button></div>';
+      }
+      if (t.role === 'user' && t.images && t.images.length) {
+        actions = `<div class="ai-attach-note">📄 페이지 이미지 ${t.images.length}장 첨부됨</div>`;
+      }
+      html += `<div class="ai-msg ${t.role}"><div class="ai-bubble">${body}</div>${actions}</div>`;
+    });
+    if (aiBusy) {
+      html += '<div class="ai-msg assistant"><div class="ai-bubble"><div class="ai-typing"><span></span><span></span><span></span></div></div></div>';
+    }
+    box.innerHTML = html;
+    typesetMath(box);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // Minimal markdown → HTML with LaTeX math protected from escaping/markdown.
+  function formatAIMarkdown(s) {
+    // 1) Stash math spans so markdown/escaping don't corrupt them
+    const math = [];
+    const stash = (m) => { math.push(m); return '\u0000M' + (math.length - 1) + '\u0000'; };
+    let t = String(s)
+      .replace(/\$\$[\s\S]+?\$\$/g, stash)   // display $$...$$
+      .replace(/\\\[[\s\S]+?\\\]/g, stash)   // display \[...\]
+      .replace(/\\\([\s\S]+?\\\)/g, stash)   // inline \(...\)
+      .replace(/\$[^$\n]+?\$/g, stash);      // inline $...$
+
+    // 2) Escape HTML + simple inline markdown
+    let h = escapeHTML(t);
+    h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+    h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // 3) Lines → headers / lists / paragraphs; a line that is only display-math becomes a block
+    const lines = h.split('\n');
+    const tokenOnly = /^\u0000M\d+\u0000$/;
+    let out = '', listType = null;        // null | 'ul' | 'ol'
+    const closeList = () => { if (listType) { out += '</' + listType + '>'; listType = null; } };
+    for (const line of lines) {
+      const tl = line.trim();
+      if (tl === '') continue;
+      if (tokenOnly.test(tl)) { closeList(); out += '<div class="ai-math-block">' + tl + '</div>'; continue; }
+      // ATX headers  #, ##, ### ...
+      const hd = tl.match(/^(#{1,6})\s+(.*)$/);
+      if (hd) { closeList(); out += `<div class="ai-h ai-h${hd[1].length}">${hd[2].replace(/\s*#+\s*$/, '')}</div>`; continue; }
+      // horizontal rule
+      if (/^(?:---|\*\*\*|___)$/.test(tl)) { closeList(); out += '<hr class="ai-hr">'; continue; }
+      // unordered list
+      let m = line.match(/^\s*[-*•]\s+(.*)$/);
+      if (m) { if (listType !== 'ul') { closeList(); out += '<ul>'; listType = 'ul'; } out += '<li>' + m[1] + '</li>'; continue; }
+      // ordered list
+      m = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (m) { if (listType !== 'ol') { closeList(); out += '<ol>'; listType = 'ol'; } out += '<li>' + m[1] + '</li>'; continue; }
+      // paragraph
+      closeList();
+      out += '<p>' + line + '</p>';
+    }
+    closeList();
+
+    // 4) Restore math (HTML-escaped so '<', '&' survive DOM parsing; KaTeX reads decoded text)
+    out = out.replace(/\u0000M(\d+)\u0000/g, (_, i) => escapeHTML(math[+i]));
+    return out || '<p></p>';
+  }
+
+  // Copy an assistant message's text to the clipboard (with fallback for non-secure contexts)
+  async function copyAIMessage(i) {
+    const t = aiTurns[i];
+    if (!t) return;
+    const text = t.display || '';
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      toast('복사되었습니다');
+    } catch (e) {
+      console.warn('copy failed', e);
+      toast('복사 실패', true);
+    }
+  }
+
+  // Typeset LaTeX inside an element using KaTeX auto-render (loaded via CDN, deferred)
+  function typesetMath(el) {    if (!el || !window.renderMathInElement) return;
+    try {
+      window.renderMathInElement(el, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '\\[', right: '\\]', display: true },
+          { left: '\\(', right: '\\)', display: false },
+          { left: '$', right: '$', display: false }
+        ],
+        throwOnError: false,
+        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      });
+    } catch (e) { console.warn('KaTeX render failed', e); }
+  }
+
+  function autoGrowAIInput() {
+    const ta = document.getElementById('ai-input');
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  }
+
+  (function bindAIInput() {
+    const ta = document.getElementById('ai-input');
+    if (!ta) return;
+    ta.addEventListener('input', autoGrowAIInput);
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAIQuestion(); }
+    });
+
+    const scopeSel = document.getElementById('ai-scope');
+    const rangeBox = document.getElementById('ai-range-inputs');
+    const fromIn = document.getElementById('ai-range-from');
+    const toIn = document.getElementById('ai-range-to');
+    if (scopeSel) {
+      scopeSel.addEventListener('change', () => {
+        aiScope = scopeSel.value;
+        const isRange = aiScope === 'range';
+        rangeBox.style.display = isRange ? '' : 'none';
+        if (isRange && currentPDF) {
+          // default range = current page if not set yet
+          if (!aiRangeFrom || !aiRangeTo) { aiRangeFrom = currentPage; aiRangeTo = currentPage; }
+          fromIn.max = toIn.max = currentPDF.numPages;
+          fromIn.value = aiRangeFrom; toIn.value = aiRangeTo;
+        }
+        updateAIContextLabel();
+      });
+    }
+    const onRange = () => {
+      aiRangeFrom = parseInt(fromIn.value, 10) || 1;
+      aiRangeTo = parseInt(toIn.value, 10) || aiRangeFrom;
+      updateAIContextLabel();
+    };
+    if (fromIn) fromIn.addEventListener('change', onRange);
+    if (toIn) toIn.addEventListener('change', onRange);
+
+    const inclImg = document.getElementById('ai-incl-img');
+    if (inclImg) inclImg.addEventListener('change', () => { aiInclImg = inclImg.checked; });
+
+    // Resizable panel width (drag the left edge)
+    const handle = document.getElementById('ai-resize');
+    const reader = document.getElementById('reader');
+    if (handle && reader) {
+      const savedW = parseInt(localStorage.getItem('ai:panelW'), 10);
+      if (savedW) reader.style.setProperty('--ai-panel-w', savedW + 'px');
+      let dragging = false;
+      const onMove = (e) => {
+        if (!dragging) return;
+        const r = reader.getBoundingClientRect();
+        const x = e.clientX;
+        let w = r.right - x;
+        const max = Math.max(320, r.width - 320);
+        w = Math.max(300, Math.min(w, max));
+        reader.style.setProperty('--ai-panel-w', w + 'px');
+      };
+      const stop = () => {
+        if (!dragging) return;
+        dragging = false;
+        reader.classList.remove('ai-resizing');
+        const w = parseInt(getComputedStyle(reader).getPropertyValue('--ai-panel-w'), 10);
+        if (w) localStorage.setItem('ai:panelW', String(w));
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', stop);
+      };
+      handle.addEventListener('pointerdown', (e) => {
+        if (window.innerWidth <= 768) return;   // panel is full-width on mobile
+        e.preventDefault();
+        dragging = true;
+        reader.classList.add('ai-resizing');
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', stop);
+      });
+    }
+  })();
 
   // -------- Utils --------
   function formatSize(bytes) {
@@ -3242,8 +4377,50 @@
     toastTimer = setTimeout(() => t.className = 'toast', isError ? 6000 : 2400);
   }
 
-  // -------- Custom Confirm Dialog --------
-  // Returns Promise<boolean> — true if user confirms, false if cancels.
+  // -------- Custom Prompt Dialog --------
+  // Returns Promise<string|null> — the entered text, or null if cancelled.
+  function customPrompt(opts = {}) {
+    const { title = '입력', message = '', placeholder = '', value = '', okText = '확인' } = opts;
+    return new Promise((resolve) => {
+      const bg = document.getElementById('prompt-modal');
+      const input = document.getElementById('prompt-input');
+      const okBtn = document.getElementById('prompt-ok');
+      const cancelBtn = document.getElementById('prompt-cancel');
+      const msgEl = document.getElementById('prompt-message');
+      document.getElementById('prompt-title').textContent = title;
+      if (message) { msgEl.textContent = message; msgEl.style.display = ''; }
+      else { msgEl.style.display = 'none'; }
+      input.placeholder = placeholder;
+      input.value = value;
+      okBtn.textContent = okText;
+
+      const close = (result) => {
+        bg.classList.remove('open');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        input.removeEventListener('keydown', onKey);
+        bg.removeEventListener('click', onBg);
+        resolve(result);
+      };
+      const onOk = () => close(input.value);
+      const onCancel = () => close(null);
+      const onKey = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+        else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+      };
+      const onBg = (e) => { if (e.target === bg) onCancel(); };
+
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      input.addEventListener('keydown', onKey);
+      bg.addEventListener('click', onBg);
+
+      bg.classList.add('open');
+      setTimeout(() => { input.focus(); input.select(); }, 50);
+    });
+  }
+
+  // -------- Custom Confirm Dialog --------  // Returns Promise<boolean> — true if user confirms, false if cancels.
   // opts: { title, message, confirmText='확인', cancelText='취소', danger=false }
   function confirmDialog(opts = {}) {
     return new Promise((resolve) => {
@@ -3866,7 +5043,8 @@
     signInGoogle, submitAuth, signOutUser, toggleAuthMode,
     toggleUserMenu, dismissMigration, runMigration,
     backToAuthForm, resendVerification,
-    downloadAllAsZip
+    downloadAllAsZip,
+    toggleAIPanel, sendAIQuestion, openAISettings, saveAISettings, clearAIChat, quickAsk, copyAIMessage
   });
   console.log('[boot] window functions exposed — script fully loaded');
 </script>
