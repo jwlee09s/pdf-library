@@ -1395,6 +1395,7 @@
   }
   .ai-typing span:nth-child(2) { animation-delay: 0.15s; }
   .ai-typing span:nth-child(3) { animation-delay: 0.3s; }
+  .ai-status { align-self: center; font-size: 11.5px; color: var(--text-4); padding: 4px 0; text-align: center; }
   @keyframes aiBounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-5px); opacity: 1; } }
 
   .ai-input-bar {
@@ -1445,7 +1446,7 @@
   .ai-keyview p { font-size: 12.5px; line-height: 1.5; color: var(--text-3); margin-bottom: 14px; }
   .ai-keyview p a { color: var(--text); text-decoration: underline; }
   .ai-keyview label { font-size: 11px; font-weight: 600; color: var(--text-3); display: block; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .ai-keyview input {
+  .ai-keyview input, .ai-keyview select {
     width: 100%;
     background: var(--surface);
     border: 0.5px solid var(--border);
@@ -1457,7 +1458,7 @@
     outline: none;
     margin-bottom: 12px;
   }
-  .ai-keyview input:focus { border-color: rgba(0,0,0,0.3); box-shadow: 0 0 0 3px rgba(0,0,0,0.06); }
+  .ai-keyview input:focus, .ai-keyview select:focus { border-color: rgba(0,0,0,0.3); box-shadow: 0 0 0 3px rgba(0,0,0,0.06); }
   .ai-keyview .hint { font-size: 11px; color: var(--text-4); margin: -6px 0 14px; line-height: 1.5; }
   .ai-keyview .key-saved { font-size: 11.5px; color: var(--green); margin-bottom: 12px; display: none; }
   .ai-keyview .key-saved.show { display: block; }
@@ -2097,9 +2098,26 @@
         <label>API Key</label>
         <input type="password" id="ai-key-input" placeholder="AIza..." autocomplete="off" />
         <label>모델</label>
-        <input type="text" id="ai-model-input" placeholder="gemini-2.5-flash" />
-        <div class="hint">무료 추천: gemini-2.5-flash (10 RPM) · gemini-2.5-flash-lite (15 RPM, 더 가벼움)</div>
-        <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="saveAISettings()">저장</button>
+        <select id="ai-model-input" onchange="onModelSelectChange()">
+          <optgroup label="무료 추천">
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+          </optgroup>
+          <optgroup label="Gemini 3">
+            <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+            <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+            <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+          </optgroup>
+          <optgroup label="고급">
+            <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+          </optgroup>
+          <optgroup label="기타">
+            <option value="__custom">직접 입력…</option>
+          </optgroup>
+        </select>
+        <input type="text" id="ai-model-custom" placeholder="모델명 직접 입력" style="display:none; margin-top:8px;" />
+        <button class="btn btn-primary" style="width:100%; justify-content:center; margin-top:4px;" onclick="saveAISettings()">저장</button>
       </div>
     </aside>
   </div>
@@ -3875,13 +3893,36 @@
     document.getElementById('ai-chat-view').style.display = 'none';
     document.getElementById('ai-key-view').style.display = 'block';
     document.getElementById('ai-key-input').value = getAIKey();
-    document.getElementById('ai-model-input').value = getAIModel();
+    const sel = document.getElementById('ai-model-input');
+    const custom = document.getElementById('ai-model-custom');
+    const cur = getAIModel();
+    const known = [...sel.options].some(o => o.value === cur);
+    if (known) {
+      sel.value = cur;
+      custom.style.display = 'none';
+      custom.value = '';
+    } else {
+      sel.value = '__custom';
+      custom.style.display = '';
+      custom.value = cur;
+    }
     document.getElementById('ai-key-saved').classList.toggle('show', !!getAIKey());
+  }
+
+  function onModelSelectChange() {
+    const sel = document.getElementById('ai-model-input');
+    const custom = document.getElementById('ai-model-custom');
+    const isCustom = sel.value === '__custom';
+    custom.style.display = isCustom ? '' : 'none';
+    if (isCustom) setTimeout(() => custom.focus(), 30);
   }
 
   function saveAISettings() {
     const key = document.getElementById('ai-key-input').value.trim();
-    const model = document.getElementById('ai-model-input').value.trim() || 'gemini-2.5-flash';
+    const sel = document.getElementById('ai-model-input');
+    let model = sel.value;
+    if (model === '__custom') model = document.getElementById('ai-model-custom').value.trim();
+    if (!model) model = 'gemini-2.5-flash';
     if (!key) { toast('API 키를 입력하세요', true); return; }
     localStorage.setItem('gemini:key', key);
     localStorage.setItem('gemini:model', model);
@@ -3996,6 +4037,16 @@
       '수식은 LaTeX로 작성하세요. 인라인 수식은 \\( ... \\) 로, 독립된 줄의 수식은 $$ ... $$ 로 감싸고, ' +
       '$$ ... $$ 한 쌍은 줄바꿈 없이 한 줄에 쓰세요.';
 
+    const genConfig = { maxOutputTokens: 8192, temperature: 0.4 };
+    // Gemini 3.5 / 3.1 use a string "thinking_level"; older 2.5 flash uses integer thinkingBudget.
+    // Keep thinking minimal so the token budget goes to the visible answer.
+    if (/gemini-3/.test(model)) {
+      genConfig.thinkingConfig = { thinkingLevel: 'low' };
+    } else if (/flash/.test(model)) {
+      genConfig.thinkingConfig = { thinkingBudget: 0 };   // 2.5 flash / flash-lite
+    }
+    // Pro models: leave thinking at default (can't disable), don't set thinkingConfig.
+
     const body = {
       system_instruction: { parts: [{ text: systemText }] },
       contents: history.map(m => {
@@ -4006,13 +4057,7 @@
         parts.push({ text: m.text });
         return { role: m.role, parts };
       }),
-      generationConfig: {
-        maxOutputTokens: 8192,
-        temperature: 0.4,
-        // Disable "thinking" so the token budget goes to the visible answer
-        // (gemini-2.5/3 flash supports this; prevents empty MAX_TOKENS replies).
-        thinkingConfig: { thinkingBudget: 0 }
-      }
+      generationConfig: genConfig
     };
 
     const res = await fetch(
@@ -4028,10 +4073,18 @@
     );
 
     if (!res.ok) {
-      let detail = '';
-      try { const j = await res.json(); detail = j?.error?.message || JSON.stringify(j); }
-      catch (_) { try { detail = await res.text(); } catch (__) {} }
-      throw new Error(`${res.status} ${detail}`.trim());
+      let detail = '', retrySec = 0;
+      try {
+        const j = await res.json();
+        detail = j?.error?.message || JSON.stringify(j);
+        const ri = (j?.error?.details || []).find(d => String(d['@type'] || '').includes('RetryInfo'));
+        if (ri?.retryDelay) retrySec = parseFloat(ri.retryDelay);   // "31s" → 31
+      } catch (_) { try { detail = await res.text(); } catch (__) {} }
+      if (!retrySec) { const m = detail.match(/retry in ([\d.]+)/i); if (m) retrySec = parseFloat(m[1]); }
+      const err = new Error(`${res.status} ${detail}`.trim());
+      err.status = res.status;
+      err.retrySec = retrySec;
+      throw err;
     }
 
     const data = await res.json();
@@ -4126,7 +4179,10 @@
       else if (/SERVICE_DISABLED|has not been used in project|is disabled/i.test(raw)) hint = 'Generative Language API가 비활성 상태입니다. Google Cloud 콘솔에서 해당 프로젝트에 이 API를 활성화하세요.';
       else if (/referer|referrer|blocked|API_KEY_HTTP_REFERRER|requests from this/i.test(raw)) hint = 'API 키에 사이트/앱 제한이 걸려 있습니다. AI Studio·Cloud 콘솔에서 키의 "애플리케이션 제한"을 없음으로 바꾸거나 이 사이트 주소를 허용 목록에 추가하세요.';
       else if (/404|not found|not supported/i.test(raw)) hint = '모델명을 찾을 수 없습니다 (404). 설정에서 모델명을 확인하세요 (예: gemini-2.5-flash).';
-      else if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) hint = '무료 한도를 초과했습니다 (429). 분당/일일 한도 — 잠시 후 다시 시도하세요.';
+      else if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) {
+        const sec = e.retrySec ? `약 ${Math.ceil(e.retrySec)}초 뒤 ` : '';
+        hint = `무료 한도(분당 요청 수)를 초과했습니다. ${sec}다시 시도하거나, 설정(톱니)에서 모델을 gemini-2.5-flash-lite(분당 한도 더 높음)로 바꿔보세요.`;
+      }
       else if (/403|PERMISSION_DENIED/i.test(raw)) hint = '권한 오류 (403). 보통 ① 키의 사이트/IP 제한, ② 프로젝트의 API 비활성, ③ 지역 제한 중 하나입니다. 아래 원본 메시지를 확인하세요.';
       else if (/Failed to fetch|NetworkError/i.test(raw)) hint = '네트워크/CORS 오류 — 연결을 확인하세요.';
       const display = (raw && raw !== hint)
@@ -5044,7 +5100,7 @@
     toggleUserMenu, dismissMigration, runMigration,
     backToAuthForm, resendVerification,
     downloadAllAsZip,
-    toggleAIPanel, sendAIQuestion, openAISettings, saveAISettings, clearAIChat, quickAsk, copyAIMessage
+    toggleAIPanel, sendAIQuestion, openAISettings, saveAISettings, clearAIChat, quickAsk, copyAIMessage, onModelSelectChange
   });
   console.log('[boot] window functions exposed — script fully loaded');
 </script>
