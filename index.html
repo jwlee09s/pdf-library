@@ -999,6 +999,8 @@
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset;
     flex-shrink: 0;
     gap: 16px;
+    position: relative;
+    z-index: 60;
   }
   .reader-title-block { min-width: 0; flex: 1; }
   .reader-title {
@@ -1163,7 +1165,7 @@
     min-height: 0;
     position: relative;
   }
-  .rbtn-ai {
+  .rbtn-ai, .rbtn-calc, #bm-add {
     background: var(--tint-2);
     -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
@@ -1179,9 +1181,42 @@
     color: var(--text);
     letter-spacing: -0.01em;
   }
+  .rbtn-calc, #bm-add { padding: 0 11px; }
+  .rbtn-calc svg, #bm-add svg { width: 17px; height: 17px; }
   .rbtn-ai svg { width: 15px; height: 15px; }
 
-  /* === SCIENTIFIC CALCULATOR === */
+  /* === BOOKMARKS === */
+  .bm-group { position: relative; display: flex; align-items: center; gap: 6px; }
+  .bm-strip { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; max-width: 320px; }
+  .bm-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    height: 26px; padding: 0 7px 0 5px;
+    border: none; border-radius: 7px; cursor: pointer;
+    background: var(--c); color: #fff;
+    font-family: inherit; font-size: 11.5px; font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+    transition: transform 0.1s var(--ease-snap, ease), filter 0.12s ease;
+  }
+  .bm-chip svg { width: 12px; height: 12px; }
+  .bm-chip:hover { transform: translateY(-1px); filter: brightness(1.06); }
+  .bm-chip:active { transform: scale(0.94); }
+  .bm-palette {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 260;
+    display: flex; gap: 6px; padding: 8px;
+    background: var(--glass-strong, rgba(255,255,255,0.95));
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    border: 0.5px solid var(--hairline, rgba(0,0,0,0.12));
+    border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+  }
+  .bm-swatch {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.85); cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.1s var(--ease-snap, ease);
+  }
+  .bm-swatch:hover { transform: scale(1.12); }
+  .bm-swatch:active { transform: scale(0.9); }
+
   .calc-panel {
     position: fixed;
     top: 80px; right: 32px;
@@ -1245,7 +1280,7 @@
   .calc-btn.warn { color: #D7263D; }
   .calc-btn.eq { background: var(--blue, #0A84FF); color: #fff; border-color: transparent; font-size: 17px; font-weight: 600; }
   .calc-btn.eq:hover { background: var(--blue-hover, #0070E0); }
-  .rbtn-calc.active { background: var(--blue, #0A84FF); color: #fff; }
+  .rbtn-calc.active { background: var(--blue, #0A84FF); color: #fff; border-color: transparent; }
   @media (max-width: 480px) {
     .calc-panel { right: 8px; left: 8px; width: auto; }
   }
@@ -2095,6 +2130,20 @@
         <button class="rbtn" id="next-page" title="다음 페이지">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
         </button>
+      </div>
+      <div class="bm-group">
+        <button class="rbtn" id="bm-add" title="현재 페이지에 책갈피 추가">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <div class="bm-strip" id="bm-strip"></div>
+        <div class="bm-palette" id="bm-palette" style="display:none;">
+          <button class="bm-swatch" data-color="#FF3B30" style="background:#FF3B30" title="빨강"></button>
+          <button class="bm-swatch" data-color="#FF9500" style="background:#FF9500" title="주황"></button>
+          <button class="bm-swatch" data-color="#FFCC00" style="background:#FFCC00" title="노랑"></button>
+          <button class="bm-swatch" data-color="#34C759" style="background:#34C759" title="초록"></button>
+          <button class="bm-swatch" data-color="#0A84FF" style="background:#0A84FF" title="파랑"></button>
+          <button class="bm-swatch" data-color="#AF52DE" style="background:#AF52DE" title="보라"></button>
+        </div>
       </div>
       <button class="rbtn rbtn-calc" id="calc-toggle" title="공학용 계산기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8" y2="11"/><line x1="12" y1="11" x2="12" y2="11"/><line x1="16" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="8" y2="15"/><line x1="12" y1="15" x2="12" y2="15"/><line x1="16" y1="15" x2="16" y2="18"/><line x1="8" y1="18" x2="12" y2="18"/></svg>
@@ -3689,10 +3738,14 @@
   let pageTrackerObserver = null;     // IntersectionObserver for current-page indicator
   let pageRenderTasks = new Map();    // page num -> render task (for cancellation on zoom)
   let isProgrammaticScroll = false;   // suppress page-tracker during click-driven scrolls
+  let currentBookId = null;           // id of the book open in the reader
+  let bookmarks = [];                 // [{ page, color }] for the current book
 
   async function openReader(id) {
     const book = library.find(b => b.id === id);
     if (!book) return;
+    currentBookId = id;
+    loadBookmarks(id);
 
     document.getElementById('reader-title').textContent = book.title;
     document.getElementById('reader-sub').textContent = `${book.pages} pages · ${formatSize(book.sizeBytes)}`;
@@ -3977,6 +4030,10 @@
     document.getElementById('ai-toggle').classList.remove('active');
     aiTurns = [];
     currentPDF = null;
+    currentBookId = null;
+    bookmarks = [];
+    renderBookmarks();
+    toggleBmPalette(false);
     pageWraps = [];
     pageObjects = [];
     renderedPages = new Set();
@@ -4574,6 +4631,71 @@
         window.addEventListener('pointerup', stop);
       });
     }
+  })();
+
+  // -------- Bookmarks (multi-color, per book; click a chip to jump & remove) --------
+  const bmKey = (id) => 'bm:' + id;
+  function loadBookmarks(id) {
+    let arr = null;
+    try { arr = JSON.parse(localStorage.getItem(bmKey(id)) || 'null'); } catch (_) {}
+    bookmarks = Array.isArray(arr) ? arr : [];
+    renderBookmarks();
+  }
+  function saveBookmarks() {
+    if (!currentBookId) return;
+    try { localStorage.setItem(bmKey(currentBookId), JSON.stringify(bookmarks)); } catch (_) {}
+  }
+  function renderBookmarks() {
+    const strip = document.getElementById('bm-strip');
+    if (!strip) return;
+    const sorted = bookmarks.slice().sort((a, b) => a.page - b.page);
+    strip.innerHTML = sorted.map((bm) => {
+      const i = bookmarks.indexOf(bm);
+      return `<button class="bm-chip" data-i="${i}" style="--c:${bm.color}" title="p.${bm.page}로 이동 (클릭 시 삭제)">` +
+        `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4-7 4V3a1 1 0 0 1 1-1z"/></svg>${bm.page}</button>`;
+    }).join('');
+  }
+  function addBookmark(color) {
+    if (!currentPDF) return;
+    bookmarks.push({ page: currentPage, color });
+    saveBookmarks();
+    renderBookmarks();
+    toast(`p.${currentPage} 책갈피 추가`);
+  }
+  function gotoBookmark(i) {
+    const bm = bookmarks[i];
+    if (!bm) return;
+    const page = bm.page;
+    bookmarks.splice(i, 1);     // consumed on click
+    saveBookmarks();
+    renderBookmarks();
+    scrollToPage(page);
+  }
+  function toggleBmPalette(force) {
+    const pal = document.getElementById('bm-palette');
+    if (!pal) return;
+    const show = force != null ? force : (pal.style.display === 'none' || !pal.style.display);
+    pal.style.display = show ? 'flex' : 'none';
+  }
+
+  (function bindBookmarks() {
+    const add = document.getElementById('bm-add');
+    const pal = document.getElementById('bm-palette');
+    const strip = document.getElementById('bm-strip');
+    if (add) add.addEventListener('click', (e) => { e.stopPropagation(); toggleBmPalette(); });
+    if (pal) pal.querySelectorAll('.bm-swatch').forEach((sw) => {
+      sw.addEventListener('click', () => { addBookmark(sw.dataset.color); toggleBmPalette(false); });
+    });
+    if (strip) strip.addEventListener('click', (e) => {
+      const chip = e.target.closest('.bm-chip');
+      if (!chip) return;
+      gotoBookmark(parseInt(chip.dataset.i, 10));
+    });
+    document.addEventListener('click', (e) => {
+      if (!pal || pal.style.display === 'none') return;
+      if (e.target.closest('.bm-group')) return;
+      toggleBmPalette(false);
+    });
   })();
 
   // -------- Scientific Calculator --------
